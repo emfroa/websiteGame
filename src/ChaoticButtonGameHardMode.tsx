@@ -5,6 +5,11 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 
+const scaledBtnStyle = (s: number) => ({
+  fontSize: `${Math.round(s * 20)}px`,
+  padding: `${Math.round(s * 18)}px ${Math.round(s * 30)}px`,
+});
+
 type PowerupType = 'hourglass' | 'money' | 'shield';
 
 const POWERUP_CHOICES: Array<{ type: PowerupType; label: string; description: string; image: string }> = [
@@ -159,6 +164,7 @@ export default function ChaoticButtonGameHardMode() {
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [decoyButtons, setDecoyButtons]     = useState<number[]>([]);
   const [decoyFlash, setDecoyFlash]         = useState('');
+  const [gasterBlasterIds, setGasterBlasterIds] = useState<number[]>([]);
 
   const gameRef    = useRef<HTMLDivElement | null>(null);
   const buttonRef  = useRef<HTMLButtonElement | null>(null);
@@ -198,6 +204,17 @@ export default function ChaoticButtonGameHardMode() {
   const decoyButtonRefs  = useRef<(HTMLButtonElement | null)[]>([]);
   const decoyInitPosRef  = useRef<{ x: number; y: number }[]>([]);
   const decoyMsgTimerRef = useRef<number | null>(null);
+  const buttonSizesRef   = useRef<number[]>([]);   // scale per target button id
+  const decoySizesRef    = useRef<number[]>([]);   // scale per decoy id
+
+  // Gaster Blasters
+  const gasterBlastersRef      = useRef<{ id: number; x: number; y: number; angle: number; phase: 'aiming' | 'charging' | 'firing' }[]>([]);
+  const gasterElBodyRef        = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  const gasterElLaserRef       = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  const gasterNextIdRef        = useRef(0);
+  const gasterSpawnIntervalRef = useRef<number | null>(null);
+  const gasterPhaseTimersRef   = useRef<Map<string, number>>(new Map());
+  const gasterEnabledRef       = useRef(false);
   const skipLevelReset = useRef(false);
   const phaseRef   = useRef<GamePhase>('username');
   const levelRef   = useRef(0);
@@ -230,6 +247,9 @@ export default function ChaoticButtonGameHardMode() {
       if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
       if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
       if (decoyMsgTimerRef.current) window.clearTimeout(decoyMsgTimerRef.current);
+      if (gasterSpawnIntervalRef.current) window.clearInterval(gasterSpawnIntervalRef.current);
+      gasterPhaseTimersRef.current.forEach(t => window.clearTimeout(t));
+      gasterPhaseTimersRef.current.clear();
     };
   }, []);
 
@@ -456,6 +476,42 @@ export default function ChaoticButtonGameHardMode() {
     decoyMsgTimerRef.current = window.setTimeout(() => setDecoyFlash(''), 1500);
   }, []);
 
+  const spawnGasterBlaster = useCallback(() => {
+    const game = gameRef.current;
+    if (!game || phaseRef.current !== 'playing') return;
+    const id = gasterNextIdRef.current++;
+    const w = game.clientWidth;
+    const h = game.clientHeight;
+    const edge = Math.floor(Math.random() * 4);
+    let x: number, y: number;
+    if      (edge === 0) { x = Math.random() * w; y = 0; }
+    else if (edge === 1) { x = Math.random() * w; y = h; }
+    else if (edge === 2) { x = 0;                 y = Math.random() * h; }
+    else                 { x = w;                 y = Math.random() * h; }
+
+    gasterBlastersRef.current.push({ id, x, y, angle: 0, phase: 'aiming' });
+    setGasterBlasterIds(prev => [...prev, id]);
+
+    // aiming (1.5s) → charging (0.7s) → firing (0.6s) → gone
+    const t1 = window.setTimeout(() => {
+      const b = gasterBlastersRef.current.find(b => b.id === id);
+      if (b) b.phase = 'charging';
+      const t2 = window.setTimeout(() => {
+        const b2 = gasterBlastersRef.current.find(b => b.id === id);
+        if (b2) b2.phase = 'firing';
+        const t3 = window.setTimeout(() => {
+          gasterBlastersRef.current = gasterBlastersRef.current.filter(b => b.id !== id);
+          setGasterBlasterIds(prev => prev.filter(i => i !== id));
+          gasterElBodyRef.current.delete(id);
+          gasterElLaserRef.current.delete(id);
+        }, 600);
+        gasterPhaseTimersRef.current.set(`${id}_2`, t3);
+      }, 700);
+      gasterPhaseTimersRef.current.set(`${id}_1`, t2);
+    }, 1500);
+    gasterPhaseTimersRef.current.set(`${id}_0`, t1);
+  }, []);
+
   const handlePikachuCollision = useCallback(() => {
     if (phaseRef.current !== 'playing') return;
     if (invincibleRef.current || shieldActiveRef.current) return;
@@ -668,6 +724,7 @@ export default function ChaoticButtonGameHardMode() {
       const nextConfig = generateRoundConfig(currentLevel);
       setRoundConfig(nextConfig);
       setTargetButtons(Array.from({ length: nextConfig.buttonCount }, (_, i) => i));
+      buttonSizesRef.current = Array.from({ length: nextConfig.buttonCount }, () => randomBetween(0.65, 1.5));
       if (buttonRef.current) randomPos(buttonRef.current);
       targetButtonRefs.current.forEach(btn => { if (btn) randomPos(btn); });
       blockersRef.current.forEach(b => { if (b) randomPos(b); });
@@ -737,7 +794,25 @@ export default function ChaoticButtonGameHardMode() {
         x: game ? Math.random() * Math.max(0, game.clientWidth - 110) : 100,
         y: game ? Math.random() * Math.max(0, game.clientHeight - 50) : 100,
       }));
+      decoySizesRef.current = Array.from({ length: decoyNum }, () => randomBetween(0.65, 1.5));
       setDecoyButtons(Array.from({ length: decoyNum }, (_, i) => i));
+
+      // Gaster Blasters – enabled from round 3 onward
+      setGasterBlasterIds([]);
+      gasterBlastersRef.current = [];
+      gasterElBodyRef.current.clear();
+      gasterElLaserRef.current.clear();
+      gasterPhaseTimersRef.current.forEach(t => window.clearTimeout(t));
+      gasterPhaseTimersRef.current.clear();
+      if (gasterSpawnIntervalRef.current) window.clearInterval(gasterSpawnIntervalRef.current);
+      const gasterEnabled = currentLevel >= 2;
+      gasterEnabledRef.current = gasterEnabled;
+      if (gasterEnabled) {
+        const spawnMs = Math.max(4000, 7000 - currentLevel * 150);
+        gasterSpawnIntervalRef.current = window.setInterval(() => {
+          if (phaseRef.current === 'playing') spawnGasterBlaster();
+        }, spawnMs);
+      }
 
       setFreezeCollectibleVisible(false);
       setFreezePos(null);
@@ -770,8 +845,11 @@ export default function ChaoticButtonGameHardMode() {
       if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
       if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
       if (pikachuTimerRef.current) window.clearTimeout(pikachuTimerRef.current);
+      if (gasterSpawnIntervalRef.current) window.clearInterval(gasterSpawnIntervalRef.current);
+      gasterPhaseTimersRef.current.forEach(t => window.clearTimeout(t));
+      gasterPhaseTimersRef.current.clear();
     };
-  }, [phase, currentLevel, randomPos, initGambleDots, initRedHazards]);
+  }, [phase, currentLevel, randomPos, initGambleDots, initRedHazards, spawnGasterBlaster]);
 
   // ── Level timer ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -934,6 +1012,42 @@ export default function ChaoticButtonGameHardMode() {
             return;
           }
         }
+
+        // ── Gaster Blasters ────────────────────────────────────────────────
+        gasterBlastersRef.current.forEach(blaster => {
+          const bodyEl  = gasterElBodyRef.current.get(blaster.id);
+          const laserEl = gasterElLaserRef.current.get(blaster.id);
+
+          // Track cursor only while aiming and not frozen
+          if (blaster.phase === 'aiming' && !freezeActiveRef.current) {
+            blaster.angle = Math.atan2(
+              cursorYRef.current - blaster.y,
+              cursorXRef.current - blaster.x,
+            );
+          }
+
+          if (bodyEl) {
+            bodyEl.style.transform = `translate(-50%, -50%) rotate(${blaster.angle}rad)`;
+            bodyEl.className = `gaster-blaster${blaster.phase === 'charging' ? ' gaster-blaster--charging' : ''}`;
+          }
+          if (laserEl) {
+            laserEl.style.opacity   = blaster.phase === 'firing' ? '1' : '0';
+            laserEl.style.transform = `translateY(-50%) rotate(${blaster.angle}rad)`;
+          }
+
+          // Collision during firing
+          if (blaster.phase === 'firing' && !invincibleRef.current && !shieldActiveRef.current) {
+            const dx   = cursorXRef.current - blaster.x;
+            const dy   = cursorYRef.current - blaster.y;
+            const cosA = Math.cos(blaster.angle);
+            const sinA = Math.sin(blaster.angle);
+            const along = dx * cosA + dy * sinA;
+            const perp  = Math.abs(-dx * sinA + dy * cosA);
+            if (along > 0 && along < 1000 && perp < 14) {
+              handleHit('⚡ Gaster Blaster beam hit you!');
+            }
+          }
+        });
       }
       updateFrame = requestAnimationFrame(update);
     };
@@ -1120,6 +1234,15 @@ export default function ChaoticButtonGameHardMode() {
     setDecoyButtons([]);
     setDecoyFlash('');
     decoyInitPosRef.current = [];
+    setGasterBlasterIds([]);
+    gasterBlastersRef.current = [];
+    gasterElBodyRef.current.clear();
+    gasterElLaserRef.current.clear();
+    if (gasterSpawnIntervalRef.current) window.clearInterval(gasterSpawnIntervalRef.current);
+    gasterPhaseTimersRef.current.forEach(t => window.clearTimeout(t));
+    gasterPhaseTimersRef.current.clear();
+    gasterNextIdRef.current = 0;
+    gasterEnabledRef.current = false;
     setPhase('username');
   };
 
@@ -1564,7 +1687,7 @@ export default function ChaoticButtonGameHardMode() {
       {/* Game area */}
       <div className={`game-area${invincible ? ' invincible-flash' : ''}`} ref={gameRef} onMouseMove={handleMouseMove}>
         {targetButtons.includes(0) && (
-          <button className="big-button" ref={buttonRef} onClick={() => handleTargetClick(0)}>
+          <button className="big-button" style={scaledBtnStyle(buttonSizesRef.current[0] ?? 1)} ref={buttonRef} onClick={() => handleTargetClick(0)}>
             PRESS
           </button>
         )}
@@ -1572,6 +1695,7 @@ export default function ChaoticButtonGameHardMode() {
           <button
             key={id}
             className="big-button extra-button"
+            style={scaledBtnStyle(buttonSizesRef.current[id] ?? 1)}
             ref={(el: HTMLButtonElement | null) => { targetButtonRefs.current[id - 1] = el; }}
             onClick={() => handleTargetClick(id)}
           >
@@ -1608,7 +1732,7 @@ export default function ChaoticButtonGameHardMode() {
           <button
             key={`decoy-${id}`}
             className="big-button"
-            style={decoyInitPosRef.current[id] ? { left: decoyInitPosRef.current[id].x, top: decoyInitPosRef.current[id].y } : undefined}
+            style={{ ...scaledBtnStyle(decoySizesRef.current[id] ?? 1), ...(decoyInitPosRef.current[id] ? { left: decoyInitPosRef.current[id].x, top: decoyInitPosRef.current[id].y } : {}) }}
             ref={(el: HTMLButtonElement | null) => { decoyButtonRefs.current[id] = el; }}
             onClick={() => handleDecoyClick(id)}
           >
@@ -1616,6 +1740,22 @@ export default function ChaoticButtonGameHardMode() {
           </button>
         ))}
         {decoyFlash && <div className="decoy-flash">{decoyFlash}</div>}
+        {gasterBlasterIds.map(id => (
+          <div
+            key={`gb-${id}`}
+            className="gaster-blaster"
+            style={{ left: gasterBlastersRef.current.find(b => b.id === id)?.x ?? 0, top: gasterBlastersRef.current.find(b => b.id === id)?.y ?? 0 }}
+            ref={(el: HTMLDivElement | null) => { gasterElBodyRef.current.set(id, el); }}
+          />
+        ))}
+        {gasterBlasterIds.map(id => (
+          <div
+            key={`gl-${id}`}
+            className="gaster-laser"
+            style={{ left: gasterBlastersRef.current.find(b => b.id === id)?.x ?? 0, top: gasterBlastersRef.current.find(b => b.id === id)?.y ?? 0 }}
+            ref={(el: HTMLDivElement | null) => { gasterElLaserRef.current.set(id, el); }}
+          />
+        ))}
         {Array.from({ length: config.numBlockers }).map((_, index) => (
           <div
             key={index}
