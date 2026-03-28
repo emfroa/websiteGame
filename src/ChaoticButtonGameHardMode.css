@@ -245,6 +245,99 @@ body {
   color: #8ef;
 }
 
+/* ─── Game-play shell: fills viewport, no scroll ──────────────────────────── */
+.app-shell-game {
+  height: 100vh;
+  min-height: unset;
+  padding: 5px 10px 4px;
+  overflow: hidden;
+  gap: 4px;
+}
+
+.app-shell-game .hud {
+  width: 100%;
+  max-width: none;
+  margin-bottom: 4px;
+  padding: 5px 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.app-shell-game .hud-right {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell-game .powerup-hud {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.app-shell-game .inventory-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.app-shell-game .inventory-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.app-shell-game .active-powerup-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-shell-game .game-area {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  max-width: none;
+}
+
+.app-shell-game .level-progress {
+  flex-shrink: 0;
+  padding: 2px 0;
+  margin-top: 2px;
+}
+
+/* ─── Decoy toast ──────────────────────────────────────────────────────────── */
+.decoy-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(180, 0, 0, 0.9);
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 800;
+  padding: 10px 24px;
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 200;
+  white-space: nowrap;
+  animation: decoy-pop 0.15s ease;
+}
+
+@keyframes decoy-pop {
+  from { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+  to   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+}
+
 /* ─── Flash animation ─────────────────────────────────────────────────────── */
 .flash {
   animation: flash 0.15s;

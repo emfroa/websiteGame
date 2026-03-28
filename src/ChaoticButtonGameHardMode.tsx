@@ -157,6 +157,8 @@ export default function ChaoticButtonGameHardMode() {
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [decoyButtons, setDecoyButtons]     = useState<number[]>([]);
+  const [decoyFlash, setDecoyFlash]         = useState('');
 
   const gameRef    = useRef<HTMLDivElement | null>(null);
   const buttonRef  = useRef<HTMLButtonElement | null>(null);
@@ -193,6 +195,9 @@ export default function ChaoticButtonGameHardMode() {
   const pikachuEnabledRef = useRef(false);
   const pikachuVisibleRef = useRef(false);
   const pikachuTimerRef = useRef<number | null>(null);
+  const decoyButtonRefs  = useRef<(HTMLButtonElement | null)[]>([]);
+  const decoyInitPosRef  = useRef<{ x: number; y: number }[]>([]);
+  const decoyMsgTimerRef = useRef<number | null>(null);
   const skipLevelReset = useRef(false);
   const phaseRef   = useRef<GamePhase>('username');
   const levelRef   = useRef(0);
@@ -224,6 +229,7 @@ export default function ChaoticButtonGameHardMode() {
       if (invincibleTimerRef.current) window.clearTimeout(invincibleTimerRef.current);
       if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
       if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
+      if (decoyMsgTimerRef.current) window.clearTimeout(decoyMsgTimerRef.current);
     };
   }, []);
 
@@ -439,6 +445,15 @@ export default function ChaoticButtonGameHardMode() {
       freezeActiveRef.current = false;
       setSaveMessage('');
     }, 3000);
+  }, []);
+
+  const handleDecoyClick = useCallback((id: number) => {
+    if (phaseRef.current !== 'playing') return;
+    setTotalScore(prev => Math.max(0, prev - 50));
+    setDecoyFlash('💀 Decoy! -50 pts');
+    setDecoyButtons(prev => prev.filter(d => d !== id));
+    if (decoyMsgTimerRef.current) window.clearTimeout(decoyMsgTimerRef.current);
+    decoyMsgTimerRef.current = window.setTimeout(() => setDecoyFlash(''), 1500);
   }, []);
 
   const handlePikachuCollision = useCallback(() => {
@@ -714,6 +729,16 @@ export default function ChaoticButtonGameHardMode() {
         }
       }
       skipLevelReset.current = false;
+      // Decoy buttons: 0 easy, 1 medium, 1–2 hard
+      const decoyStage = currentLevel < 5 ? 0 : currentLevel < 12 ? 1 : 2;
+      const decoyNum = decoyStage === 0 ? 0 : decoyStage === 1 ? 1 : (Math.random() < 0.5 ? 1 : 2);
+      const game = gameRef.current;
+      decoyInitPosRef.current = Array.from({ length: decoyNum }, () => ({
+        x: game ? Math.random() * Math.max(0, game.clientWidth - 110) : 100,
+        y: game ? Math.random() * Math.max(0, game.clientHeight - 50) : 100,
+      }));
+      setDecoyButtons(Array.from({ length: decoyNum }, (_, i) => i));
+
       setFreezeCollectibleVisible(false);
       setFreezePos(null);
       setFreezeActive(false);
@@ -800,7 +825,7 @@ export default function ChaoticButtonGameHardMode() {
     const update = () => {
       if (phaseRef.current !== 'playing') return;
       const game = gameRef.current;
-      const buttons = [buttonRef.current, ...targetButtonRefs.current].filter(Boolean) as HTMLButtonElement[];
+      const buttons = [buttonRef.current, ...targetButtonRefs.current, ...decoyButtonRefs.current].filter(Boolean) as HTMLButtonElement[];
       if (game && buttons.length > 0) {
         buttons.forEach(button => {
           const bx   = button.offsetLeft + button.clientWidth / 2;
@@ -1092,6 +1117,9 @@ export default function ChaoticButtonGameHardMode() {
     setScoreSaved(false);
     setGameOverReason('');
     setLocalLoadError(null);
+    setDecoyButtons([]);
+    setDecoyFlash('');
+    decoyInitPosRef.current = [];
     setPhase('username');
   };
 
@@ -1460,7 +1488,7 @@ export default function ChaoticButtonGameHardMode() {
   const timerColor  = timerPct > 50 ? '#0f0' : timerPct > 20 ? '#ff0' : '#f00';
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell-game">
       {/* HUD */}
       <div className="hud">
         <div className="hud-left">
@@ -1576,6 +1604,18 @@ export default function ChaoticButtonGameHardMode() {
           </div>
         )}
         {freezeActive && <div className="freeze-overlay" />}
+        {decoyButtons.map((id) => (
+          <button
+            key={`decoy-${id}`}
+            className="big-button"
+            style={decoyInitPosRef.current[id] ? { left: decoyInitPosRef.current[id].x, top: decoyInitPosRef.current[id].y } : undefined}
+            ref={(el: HTMLButtonElement | null) => { decoyButtonRefs.current[id] = el; }}
+            onClick={() => handleDecoyClick(id)}
+          >
+            PREES
+          </button>
+        ))}
+        {decoyFlash && <div className="decoy-flash">{decoyFlash}</div>}
         {Array.from({ length: config.numBlockers }).map((_, index) => (
           <div
             key={index}
