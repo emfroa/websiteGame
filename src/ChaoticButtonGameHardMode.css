@@ -163,6 +163,20 @@ body {
   pointer-events: none;
 }
 
+.billcipher {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  background: url('/billcipher.png') center/contain no-repeat;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.billcipher.active {
+  opacity: 1;
+}
+
 /* ─── Flash animation ─────────────────────────────────────────────────────── */
 .flash {
   animation: flash 0.15s;

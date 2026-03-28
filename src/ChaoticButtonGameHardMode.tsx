@@ -145,15 +145,20 @@ export default function ChaoticButtonGameHardMode() {
   const [gambleTimeLeft, setGambleTimeLeft] = useState(0);
   const [gambleOutcome, setGambleOutcome]   = useState<boolean | null>(null);
   const [gambleResult, setGambleResult]     = useState<'pending' | 'won' | 'lost' | null>(null);
+  const [billcipherActive, setBillcipherActive] = useState(false);
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
 
   const gameRef    = useRef<HTMLDivElement | null>(null);
   const buttonRef  = useRef<HTMLButtonElement | null>(null);
+  const billcipherRef = useRef<HTMLDivElement | null>(null);
   const blockersRef = useRef<(HTMLDivElement | null)[]>([]);
   const gambleDotsRef = useRef<{ x: number; y: number }[]>([]);
   const gambleDotElsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const billcipherEnabledRef = useRef(false);
+  const billcipherPosRef = useRef({ x: 0, y: 0 });
+  const billcipherSpeedRef = useRef(2.3);
   const cursorXRef = useRef(0);
   const cursorYRef = useRef(0);
   const windForceRef = useRef(0);
@@ -201,6 +206,12 @@ export default function ChaoticButtonGameHardMode() {
     setGambleResult('pending');
     setSaveMessage('');
     setPhase('gambling');
+  }, []);
+
+  const handleBillcipherCollision = useCallback(() => {
+    setTotalScore(prev => prev - 1000);
+    setSaveMessage('💀 Billcipher caught you. Level over and -1000 points.');
+    setPhase('gameOver');
   }, []);
 
   const loadLeaderboard = useCallback(async () => {
@@ -327,9 +338,21 @@ export default function ChaoticButtonGameHardMode() {
   useLayoutEffect(() => {
     if (phase !== 'playing' && phase !== 'gambling') return;
     if (buttonRef.current) randomPos(buttonRef.current);
+
     if (phase === 'playing') {
       blockersRef.current.forEach(b => { if (b) randomPos(b); });
+      const hasBillcipher = Math.random() < 0.5;
+      setBillcipherActive(hasBillcipher);
+      billcipherEnabledRef.current = hasBillcipher;
+      if (hasBillcipher && billcipherRef.current) {
+        randomPos(billcipherRef.current);
+        billcipherPosRef.current = {
+          x: billcipherRef.current.offsetLeft,
+          y: billcipherRef.current.offsetTop,
+        };
+      }
     }
+
     if (phase === 'gambling') {
       initGambleDots(5);
     }
@@ -410,6 +433,31 @@ export default function ChaoticButtonGameHardMode() {
           game.classList.add('flash');
           window.clearTimeout(flashTimeout);
           flashTimeout = window.setTimeout(() => game.classList.remove('flash'), 150);
+        }
+
+        if (billcipherEnabledRef.current && billcipherRef.current) {
+          const bill = billcipherRef.current;
+          const pos = billcipherPosRef.current;
+          const dx = cursorXRef.current - pos.x;
+          const dy = cursorYRef.current - pos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const speed = billcipherSpeedRef.current;
+
+          if (dist > 0) {
+            const step = Math.min(speed, dist);
+            pos.x += (dx / dist) * step;
+            pos.y += (dy / dist) * step;
+          }
+
+          pos.x = clamp(pos.x, 0, game.clientWidth - bill.clientWidth);
+          pos.y = clamp(pos.y, 0, game.clientHeight - bill.clientHeight);
+          bill.style.left = `${pos.x}px`;
+          bill.style.top = `${pos.y}px`;
+
+          if (Math.hypot(pos.x - cursorXRef.current, pos.y - cursorYRef.current) < 24) {
+            handleBillcipherCollision();
+            return;
+          }
         }
       }
       updateFrame = requestAnimationFrame(update);
@@ -729,6 +777,7 @@ export default function ChaoticButtonGameHardMode() {
         <button className="big-button" ref={buttonRef} onClick={handleButtonClick}>
           PRESS
         </button>
+        <div className={`billcipher${billcipherActive ? ' active' : ''}`} ref={billcipherRef} />
         {Array.from({ length: config.numBlockers }).map((_, index) => (
           <div
             key={index}
