@@ -810,7 +810,11 @@ export default function ChaoticButtonGameHardMode() {
       if (gasterEnabled) {
         const spawnMs = Math.max(4000, 7000 - currentLevel * 150);
         gasterSpawnIntervalRef.current = window.setInterval(() => {
-          if (phaseRef.current === 'playing') spawnGasterBlaster();
+          if (phaseRef.current !== 'playing') return;
+          const active = gasterBlastersRef.current.length;
+          if (active >= 6) return;
+          const count = Math.min(6 - active, Math.floor(Math.random() * 6) + 1);
+          for (let i = 0; i < count; i++) spawnGasterBlaster();
         }, spawnMs);
       }
 
