@@ -41,14 +41,14 @@ const LEVELS: LevelConfig[] = [
     label: 'Medium Round',
     description: 'More blockers and a faster button.',
     numBlockers: 2, blockerSpeed: 1.3, escapeRadius: 140, escapeStrength: 0.2,
-    randomTeleportChance: 0.005, windEnabled: true, flashEnabled: false,
+    randomTeleportChance: 0.002, windEnabled: true, flashEnabled: false,
     buttonCount: 2, timeLimit: 0, pointsBase: 240,
   },
   {
     label: 'Hard Round',
     description: 'Everything moves faster. Stay sharp.',
     numBlockers: 4, blockerSpeed: 2.0, escapeRadius: 200, escapeStrength: 0.4,
-    randomTeleportChance: 0.015, windEnabled: true, flashEnabled: true,
+    randomTeleportChance: 0.006, windEnabled: true, flashEnabled: true,
     buttonCount: 3, timeLimit: 0, pointsBase: 420,
   },
 ];
@@ -63,7 +63,7 @@ const generateRoundConfig = (roundIndex: number): LevelConfig => {
     blockerSpeed: Math.min(4.5, Math.max(0.5, base.blockerSpeed + randomBetween(-0.4, 0.8) + roundIndex * 0.03)),
     escapeRadius: Math.min(320, Math.max(80, base.escapeRadius + randomBetween(-20, 30))),
     escapeStrength: Math.min(0.85, Math.max(0.05, base.escapeStrength + randomBetween(-0.05, 0.1) + roundIndex * 0.006)),
-    randomTeleportChance: Math.min(0.05, Math.max(0, base.randomTeleportChance + randomBetween(-0.003, 0.01) + roundIndex * 0.001)),
+    randomTeleportChance: Math.min(0.018, Math.max(0, base.randomTeleportChance + randomBetween(-0.001, 0.004) + roundIndex * 0.0004)),
     windEnabled: base.windEnabled || Math.random() < 0.2,
     flashEnabled: base.flashEnabled || (stage === 2 && Math.random() < 0.25),
     buttonCount: Math.min(7, Math.max(1, Math.round(randomBetween(1, 3) + stage + roundIndex * 0.06))),
@@ -132,6 +132,11 @@ export default function ChaoticButtonGameHardMode() {
   const [redHazardCount, setRedHazardCount] = useState(0);
   const [powerupUsed, setPowerupUsed] = useState(false);
   const [timeSlowActive, setTimeSlowActive] = useState(false);
+  const [lives, setLives] = useState(3);
+  const [invincible, setInvincible] = useState(false);
+  const [freezeCollectibleVisible, setFreezeCollectibleVisible] = useState(false);
+  const [freezePos, setFreezePos] = useState<{ x: number; y: number } | null>(null);
+  const [freezeActive, setFreezeActive] = useState(false);
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
@@ -160,6 +165,12 @@ export default function ChaoticButtonGameHardMode() {
   const powerupTimerRef = useRef<number | null>(null);
   const shieldTimerRef = useRef<number | null>(null);
   const shieldActiveRef = useRef(false);
+  const livesRef = useRef(3);
+  const invincibleRef = useRef(false);
+  const freezeActiveRef = useRef(false);
+  const invincibleTimerRef = useRef<number | null>(null);
+  const freezeTimerRef = useRef<number | null>(null);
+  const freezeSpawnTimerRef = useRef<number | null>(null);
   const phaseRef   = useRef<GamePhase>('username');
   const levelRef   = useRef(0);
 
@@ -170,6 +181,9 @@ export default function ChaoticButtonGameHardMode() {
   useEffect(() => { redHazardVisibleRef.current = redHazardVisible; }, [redHazardVisible]);
   useEffect(() => { timeSlowActiveRef.current = timeSlowActive; }, [timeSlowActive]);
   useEffect(() => { shieldActiveRef.current = shieldActive; }, [shieldActive]);
+  useEffect(() => { livesRef.current = lives; }, [lives]);
+  useEffect(() => { invincibleRef.current = invincible; }, [invincible]);
+  useEffect(() => { freezeActiveRef.current = freezeActive; }, [freezeActive]);
 
   useEffect(() => {
     return () => {
@@ -177,6 +191,9 @@ export default function ChaoticButtonGameHardMode() {
       if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
       if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
       if (shieldTimerRef.current) window.clearTimeout(shieldTimerRef.current);
+      if (invincibleTimerRef.current) window.clearTimeout(invincibleTimerRef.current);
+      if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
+      if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
     };
   }, []);
 
@@ -357,10 +374,41 @@ export default function ChaoticButtonGameHardMode() {
     }
   }, []);
 
+  const handleHit = useCallback((message: string, scorePenalty = 0) => {
+    if (invincibleRef.current || shieldActiveRef.current) return;
+    if (scorePenalty > 0) setTotalScore(prev => Math.max(0, prev - scorePenalty));
+    const newLives = livesRef.current - 1;
+    setLives(newLives);
+    if (newLives <= 0) {
+      setSaveMessage(message + ' No lives left.');
+      setPhase('gameOver');
+    } else {
+      setSaveMessage(`${message} Lives remaining: ${newLives}`);
+      setInvincible(true);
+      if (invincibleTimerRef.current) window.clearTimeout(invincibleTimerRef.current);
+      invincibleTimerRef.current = window.setTimeout(() => {
+        setInvincible(false);
+      }, 1500);
+    }
+  }, []);
+
   const handleBillcipherCollision = useCallback(() => {
-    setTotalScore(prev => prev - 1000);
-    setSaveMessage('💀 Billcipher caught you. Level over and -1000 points.');
-    setPhase('gameOver');
+    handleHit('💀 Billcipher caught you! -500 pts.', 500);
+  }, [handleHit]);
+
+  const handleFreezeClick = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    setFreezeCollectibleVisible(false);
+    setFreezePos(null);
+    setFreezeActive(true);
+    freezeActiveRef.current = true;
+    setSaveMessage('❄️ Enemies frozen for 3 seconds!');
+    if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
+    freezeTimerRef.current = window.setTimeout(() => {
+      setFreezeActive(false);
+      freezeActiveRef.current = false;
+      setSaveMessage('');
+    }, 3000);
   }, []);
 
   const loadLeaderboard = useCallback(async () => {
@@ -524,6 +572,28 @@ export default function ChaoticButtonGameHardMode() {
       setPowerupUsed(false);
       setTimeSlowActive(false);
       timeScaleRef.current = 1;
+      setInvincible(false);
+      invincibleRef.current = false;
+      setFreezeCollectibleVisible(false);
+      setFreezePos(null);
+      setFreezeActive(false);
+      freezeActiveRef.current = false;
+      if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
+      if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
+      freezeSpawnTimerRef.current = window.setTimeout(() => {
+        if (phaseRef.current !== 'playing') return;
+        const game = gameRef.current;
+        if (!game) return;
+        setFreezePos({
+          x: randomBetween(20, game.clientWidth - 60),
+          y: randomBetween(20, game.clientHeight - 60),
+        });
+        setFreezeCollectibleVisible(true);
+        freezeSpawnTimerRef.current = window.setTimeout(() => {
+          setFreezeCollectibleVisible(false);
+          setFreezePos(null);
+        }, 8000);
+      }, 5000 + Math.random() * 4000);
     }
 
     if (phase === 'gambling') {
@@ -533,6 +603,7 @@ export default function ChaoticButtonGameHardMode() {
     return () => {
       if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
       if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
+      if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
     };
   }, [phase, currentLevel, randomPos, initGambleDots, initRedHazards]);
 
@@ -572,7 +643,7 @@ export default function ChaoticButtonGameHardMode() {
     const animateBlockers = () => {
       if (phaseRef.current !== 'playing') return;
       const game = gameRef.current;
-      if (game) {
+      if (game && !freezeActiveRef.current) {
         blockersRef.current.forEach((blocker, index) => {
           if (!blocker) return;
           const t = Date.now() * cfg.blockerSpeed * timeScaleRef.current;
@@ -622,9 +693,9 @@ export default function ChaoticButtonGameHardMode() {
             const dxh = cursorXRef.current - hazard.x;
             const dyh = cursorYRef.current - hazard.y;
             const dh = Math.sqrt(dxh * dxh + dyh * dyh);
-            const hazardSpeed = 1.8 * timeScaleRef.current;
+            const hazardSpeed = freezeActiveRef.current ? 0 : 1.8 * timeScaleRef.current;
 
-            if (dh > 0) {
+            if (dh > 0 && hazardSpeed > 0) {
               const step = Math.min(hazardSpeed, dh);
               hazard.x += (dxh / dh) * step;
               hazard.y += (dyh / dh) * step;
@@ -639,10 +710,7 @@ export default function ChaoticButtonGameHardMode() {
             }
 
             if (Math.hypot(hazard.x - cursorXRef.current, hazard.y - cursorYRef.current) < 18) {
-              if (!shieldActiveRef.current) {
-                setSaveMessage('💀 A red dot hit you. Level over.');
-                setPhase('gameOver');
-              }
+              handleHit('💀 A red dot hit you!');
             }
           });
         }
@@ -653,9 +721,9 @@ export default function ChaoticButtonGameHardMode() {
           const dx = cursorXRef.current - pos.x;
           const dy = cursorYRef.current - pos.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          const speed = billcipherSpeedRef.current * timeScaleRef.current;
+          const speed = freezeActiveRef.current ? 0 : billcipherSpeedRef.current * timeScaleRef.current;
 
-          if (dist > 0) {
+          if (dist > 0 && speed > 0) {
             const step = Math.min(speed, dist);
             pos.x += (dx / dist) * step;
             pos.y += (dy / dist) * step;
@@ -810,6 +878,17 @@ export default function ChaoticButtonGameHardMode() {
     if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
     if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
     if (shieldTimerRef.current) window.clearTimeout(shieldTimerRef.current);
+    if (invincibleTimerRef.current) window.clearTimeout(invincibleTimerRef.current);
+    if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
+    if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
+    setLives(3);
+    livesRef.current = 3;
+    setInvincible(false);
+    invincibleRef.current = false;
+    setFreezeCollectibleVisible(false);
+    setFreezePos(null);
+    setFreezeActive(false);
+    freezeActiveRef.current = false;
     setCurrentLevel(0);
     setRoundScores([]);
     setRoundConfig(generateRoundConfig(0));
@@ -1084,6 +1163,11 @@ export default function ChaoticButtonGameHardMode() {
         </div>
         <div className="hud-right">
           <span className="hud-score">Score: {totalScore}</span>
+          <div className="lives-display">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <span key={i} className={`heart${i < lives ? '' : ' heart-empty'}`}>♥</span>
+            ))}
+          </div>
           {config.timeLimit > 0 && (
             <div className="timer-wrap">
               <div className="timer-bar" style={{ width: `${timerPct}%`, background: timerColor }} />
@@ -1134,6 +1218,8 @@ export default function ChaoticButtonGameHardMode() {
             )}
             {shieldActive && <span className="powerup-status">🛡️ Shield active</span>}
             {timeSlowActive && <span className="powerup-status">⏳ Slow time active</span>}
+            {freezeActive && <span className="powerup-status freeze-status">❄️ Enemies frozen!</span>}
+            {invincible && <span className="powerup-status invincible-status">💫 Invincible!</span>}
             {activePowerups.filter(p => p === 'money').length > 0 && (
               <span className="powerup-status">💰 Points will multiply this round</span>
             )}
@@ -1142,7 +1228,7 @@ export default function ChaoticButtonGameHardMode() {
       </div>
 
       {/* Game area */}
-      <div className="game-area" ref={gameRef} onMouseMove={handleMouseMove}>
+      <div className={`game-area${invincible ? ' invincible-flash' : ''}`} ref={gameRef} onMouseMove={handleMouseMove}>
         {targetButtons.includes(0) && (
           <button className="big-button" ref={buttonRef} onClick={() => handleTargetClick(0)}>
             PRESS
@@ -1168,6 +1254,16 @@ export default function ChaoticButtonGameHardMode() {
             ref={(el: HTMLDivElement | null) => { redHazardElsRef.current[index] = el; }}
           />
         ))}
+        {freezeCollectibleVisible && freezePos && (
+          <div
+            className="freeze-collectible"
+            style={{ left: freezePos.x, top: freezePos.y }}
+            onClick={handleFreezeClick}
+          >
+            ❄️
+          </div>
+        )}
+        {freezeActive && <div className="freeze-overlay" />}
         {Array.from({ length: config.numBlockers }).map((_, index) => (
           <div
             key={index}
