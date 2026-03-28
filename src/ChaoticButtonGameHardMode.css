@@ -153,6 +153,16 @@ body {
   pointer-events: none;
 }
 
+.gamble-dot {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ff3b3b;
+  box-shadow: 0 0 16px rgba(255, 59, 59, 0.65);
+  pointer-events: none;
+}
+
 /* ─── Flash animation ─────────────────────────────────────────────────────── */
 .flash {
   animation: flash 0.15s;
