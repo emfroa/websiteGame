@@ -165,16 +165,84 @@ body {
 
 .billcipher {
   position: absolute;
-  width: 80px;
-  height: 80px;
+  width: 60px;
+  height: 60px;
   background: url('/billcipher.png') center/contain no-repeat;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease;
   pointer-events: none;
 }
 
 .billcipher.active {
   opacity: 1;
+  transform: scale(1.05);
+}
+
+.red-hazard {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff2f2f;
+  box-shadow: 0 0 12px rgba(255, 47, 47, 0.8);
+  pointer-events: none;
+}
+
+.powerup-panel {
+  width: 100%;
+  text-align: left;
+}
+
+.powerup-grid {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.powerup-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #151515;
+  border: 2px solid #333;
+  border-radius: 14px;
+  color: #ddd;
+  text-align: left;
+  cursor: pointer;
+}
+
+.powerup-card.selected {
+  border-color: #8be3ff;
+  background: linear-gradient(135deg, rgba(11, 116, 181, 0.14), #111);
+}
+
+.powerup-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  border: 2px solid #555;
+}
+
+.powerup-hud {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.powerup-label {
+  font-size: 0.8rem;
+  color: #9ae;
+}
+
+.powerup-status {
+  font-size: 0.85rem;
+  color: #8ef;
 }
 
 /* ─── Flash animation ─────────────────────────────────────────────────────── */

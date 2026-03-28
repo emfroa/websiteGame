@@ -146,6 +146,12 @@ export default function ChaoticButtonGameHardMode() {
   const [gambleOutcome, setGambleOutcome]   = useState<boolean | null>(null);
   const [gambleResult, setGambleResult]     = useState<'pending' | 'won' | 'lost' | null>(null);
   const [billcipherActive, setBillcipherActive] = useState(false);
+  const [billcipherVisible, setBillcipherVisible] = useState(false);
+  const [redHazardVisible, setRedHazardVisible] = useState(false);
+  const [redHazardCount, setRedHazardCount] = useState(0);
+  const [selectedPowerup, setSelectedPowerup] = useState<'hourglass' | null>('hourglass');
+  const [powerupUsed, setPowerupUsed] = useState(false);
+  const [timeSlowActive, setTimeSlowActive] = useState(false);
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
@@ -156,18 +162,38 @@ export default function ChaoticButtonGameHardMode() {
   const blockersRef = useRef<(HTMLDivElement | null)[]>([]);
   const gambleDotsRef = useRef<{ x: number; y: number }[]>([]);
   const gambleDotElsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const redHazardDotsRef = useRef<{ x: number; y: number }[]>([]);
+  const redHazardElsRef = useRef<(HTMLDivElement | null)[]>([]);
   const billcipherEnabledRef = useRef(false);
+  const billcipherVisibleRef = useRef(false);
+  const redHazardVisibleRef = useRef(false);
+  const timeSlowActiveRef = useRef(false);
   const billcipherPosRef = useRef({ x: 0, y: 0 });
   const billcipherSpeedRef = useRef(2.3);
   const cursorXRef = useRef(0);
   const cursorYRef = useRef(0);
   const windForceRef = useRef(0);
+  const timeScaleRef = useRef(1);
+  const billcipherTimerRef = useRef<number | null>(null);
+  const redHazardTimerRef = useRef<number | null>(null);
+  const powerupTimerRef = useRef<number | null>(null);
   const phaseRef   = useRef<GamePhase>('username');
   const levelRef   = useRef(0);
 
   // Keep refs in sync
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { levelRef.current = currentLevel; }, [currentLevel]);
+  useEffect(() => { billcipherVisibleRef.current = billcipherVisible; }, [billcipherVisible]);
+  useEffect(() => { redHazardVisibleRef.current = redHazardVisible; }, [redHazardVisible]);
+  useEffect(() => { timeSlowActiveRef.current = timeSlowActive; }, [timeSlowActive]);
+
+  useEffect(() => {
+    return () => {
+      if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
+      if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
+      if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
+    };
+  }, []);
 
   const config = LEVELS[currentLevel] ?? LEVELS[0];
 
@@ -200,6 +226,26 @@ export default function ChaoticButtonGameHardMode() {
     });
   }, []);
 
+  const initRedHazards = useCallback((count = 5) => {
+    const game = gameRef.current;
+    if (!game) return;
+
+    const hazards = Array.from({ length: count }, () => ({
+      x: Math.random() * Math.max(0, game.clientWidth - 18),
+      y: Math.random() * Math.max(0, game.clientHeight - 18),
+    }));
+
+    redHazardDotsRef.current = hazards;
+    setRedHazardCount(count);
+    hazards.forEach((hazard, index) => {
+      const hazardEl = redHazardElsRef.current[index];
+      if (hazardEl) {
+        hazardEl.style.left = `${hazard.x}px`;
+        hazardEl.style.top = `${hazard.y}px`;
+      }
+    });
+  }, []);
+
   const handleStartGamble = useCallback(() => {
     setGambleOutcome(Math.random() < 0.5);
     setGambleTimeLeft(7);
@@ -207,6 +253,20 @@ export default function ChaoticButtonGameHardMode() {
     setSaveMessage('');
     setPhase('gambling');
   }, []);
+
+  const handleUsePowerup = useCallback(() => {
+    if (selectedPowerup !== 'hourglass' || powerupUsed || phaseRef.current !== 'playing') return;
+    setPowerupUsed(true);
+    setTimeSlowActive(true);
+    timeScaleRef.current = 0.45;
+    setSaveMessage('⏳ Hourglass activated! Hazards slow down for 6 seconds.');
+    if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
+    powerupTimerRef.current = window.setTimeout(() => {
+      timeScaleRef.current = 1;
+      setTimeSlowActive(false);
+      setSaveMessage('⏱️ Hourglass effect ended.');
+    }, 6000);
+  }, [powerupUsed, selectedPowerup]);
 
   const handleBillcipherCollision = useCallback(() => {
     setTotalScore(prev => prev - 1000);
@@ -341,8 +401,9 @@ export default function ChaoticButtonGameHardMode() {
 
     if (phase === 'playing') {
       blockersRef.current.forEach(b => { if (b) randomPos(b); });
-      const hasBillcipher = Math.random() < 0.5;
+      const hasBillcipher = Math.random() < 0.4; // 40% chance to have Billcipher in this level
       setBillcipherActive(hasBillcipher);
+      setBillcipherVisible(false);
       billcipherEnabledRef.current = hasBillcipher;
       if (hasBillcipher && billcipherRef.current) {
         randomPos(billcipherRef.current);
@@ -351,12 +412,36 @@ export default function ChaoticButtonGameHardMode() {
           y: billcipherRef.current.offsetTop,
         };
       }
+      setRedHazardVisible(false);
+      setRedHazardCount(0);
+      if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
+      if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
+      if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
+      redHazardTimerRef.current = window.setTimeout(() => {
+        if (phaseRef.current === 'playing' && Math.random() < 0.2) {
+          setRedHazardVisible(true);
+          initRedHazards(5);
+        }
+      }, 3000);
+      billcipherTimerRef.current = window.setTimeout(() => {
+        if (phaseRef.current === 'playing' && billcipherEnabledRef.current) {
+          setBillcipherVisible(true);
+        }
+      }, 3000);
+      setPowerupUsed(false);
+      setTimeSlowActive(false);
+      timeScaleRef.current = 1;
     }
 
     if (phase === 'gambling') {
       initGambleDots(5);
     }
-  }, [phase, currentLevel, randomPos, initGambleDots]);
+
+    return () => {
+      if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
+      if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
+    };
+  }, [phase, currentLevel, randomPos, initGambleDots, initRedHazards]);
 
   // ── Level timer ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -397,7 +482,7 @@ export default function ChaoticButtonGameHardMode() {
       if (game) {
         blockersRef.current.forEach((blocker, index) => {
           if (!blocker) return;
-          const t = Date.now() * cfg.blockerSpeed;
+          const t = Date.now() * cfg.blockerSpeed * timeScaleRef.current;
           const x = Math.sin(t / 200 + index) * 350 + 400;
           const y = Math.cos(t / 300 + index * 3) * 230 + 250;
           blocker.style.left = `${clamp(x, 0, game.clientWidth  - blocker.clientWidth)}px`;
@@ -418,7 +503,7 @@ export default function ChaoticButtonGameHardMode() {
         const dy   = cursorYRef.current - by;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (Math.random() < cfg.randomTeleportChance) randomPos(button);
+        if (Math.random() < cfg.randomTeleportChance * timeScaleRef.current) randomPos(button);
 
         if (dist < cfg.escapeRadius) {
           button.style.left = `${clamp(button.offsetLeft - dx * cfg.escapeStrength, 0, game.clientWidth  - button.clientWidth)}px`;
@@ -426,7 +511,7 @@ export default function ChaoticButtonGameHardMode() {
         }
 
         if (cfg.windEnabled) {
-          button.style.left = `${clamp(button.offsetLeft + windForceRef.current * 0.08, 0, game.clientWidth - button.clientWidth)}px`;
+          button.style.left = `${clamp(button.offsetLeft + windForceRef.current * 0.08 * timeScaleRef.current, 0, game.clientWidth - button.clientWidth)}px`;
         }
 
         if (cfg.flashEnabled && Math.random() < 0.01) {
@@ -435,13 +520,41 @@ export default function ChaoticButtonGameHardMode() {
           flashTimeout = window.setTimeout(() => game.classList.remove('flash'), 150);
         }
 
-        if (billcipherEnabledRef.current && billcipherRef.current) {
+        if (redHazardVisibleRef.current && redHazardDotsRef.current.length > 0) {
+          redHazardDotsRef.current.forEach((hazard, index) => {
+            const dxh = cursorXRef.current - hazard.x;
+            const dyh = cursorYRef.current - hazard.y;
+            const dh = Math.sqrt(dxh * dxh + dyh * dyh);
+            const hazardSpeed = 1.8 * timeScaleRef.current;
+
+            if (dh > 0) {
+              const step = Math.min(hazardSpeed, dh);
+              hazard.x += (dxh / dh) * step;
+              hazard.y += (dyh / dh) * step;
+            }
+
+            hazard.x = clamp(hazard.x, 0, game.clientWidth - 18);
+            hazard.y = clamp(hazard.y, 0, game.clientHeight - 18);
+            const hazardEl = redHazardElsRef.current[index];
+            if (hazardEl) {
+              hazardEl.style.left = `${hazard.x}px`;
+              hazardEl.style.top = `${hazard.y}px`;
+            }
+
+            if (Math.hypot(hazard.x - cursorXRef.current, hazard.y - cursorYRef.current) < 18) {
+              setSaveMessage('💀 A red dot hit you. Level over.');
+              setPhase('gameOver');
+            }
+          });
+        }
+
+        if (billcipherEnabledRef.current && billcipherRef.current && billcipherVisibleRef.current) {
           const bill = billcipherRef.current;
           const pos = billcipherPosRef.current;
           const dx = cursorXRef.current - pos.x;
           const dy = cursorYRef.current - pos.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          const speed = billcipherSpeedRef.current;
+          const speed = billcipherSpeedRef.current * timeScaleRef.current;
 
           if (dist > 0) {
             const step = Math.min(speed, dist);
@@ -454,7 +567,7 @@ export default function ChaoticButtonGameHardMode() {
           bill.style.left = `${pos.x}px`;
           bill.style.top = `${pos.y}px`;
 
-          if (Math.hypot(pos.x - cursorXRef.current, pos.y - cursorYRef.current) < 24) {
+          if (Math.hypot(pos.x - cursorXRef.current, pos.y - cursorYRef.current) < 18) {
             handleBillcipherCollision();
             return;
           }
@@ -560,6 +673,9 @@ export default function ChaoticButtonGameHardMode() {
 
   // ── Restart ──────────────────────────────────────────────────────────────
   const handleRestart = () => {
+    if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
+    if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
+    if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
     setCurrentLevel(0);
     setLevelScores([]);
     setTotalScore(0);
@@ -569,6 +685,11 @@ export default function ChaoticButtonGameHardMode() {
     setGambleOutcome(null);
     setGambleResult(null);
     gambleDotsRef.current = [];
+    setBillcipherVisible(false);
+    setRedHazardVisible(false);
+    setRedHazardCount(0);
+    setTimeSlowActive(false);
+    timeScaleRef.current = 1;
     setSaveMessage('');
     setPhase('username');
   };
@@ -637,6 +758,22 @@ export default function ChaoticButtonGameHardMode() {
           <div className="level-badge">Level {currentLevel + 1} / {LEVELS.length}</div>
           <p className="score-earned">+{lastScore} pts</p>
           <p className="score-total">Total: {totalScore} pts</p>
+          <div className="powerup-panel">
+            <h3>Choose a powerup for the next level</h3>
+            <div className="powerup-grid">
+              <button
+                type="button"
+                className={`powerup-card${selectedPowerup === 'hourglass' ? ' selected' : ''}`}
+                onClick={() => setSelectedPowerup('hourglass')}
+              >
+                <div className="powerup-icon" style={{ backgroundImage: 'url(/img/hourglass.png)' }} />
+                <div>
+                  <strong>Hourglass</strong>
+                  <p>Slow hazards and enemies for 6 seconds.</p>
+                </div>
+              </button>
+            </div>
+          </div>
           <button className="action-btn" onClick={handleNextLevel}>
             {isLast ? 'Finish Game' : `Level ${currentLevel + 2} →`}
           </button>
@@ -769,6 +906,19 @@ export default function ChaoticButtonGameHardMode() {
             </div>
           )}
           {config.windEnabled && <span className="wind-display">Wind: {wind}</span>}
+          <div className="powerup-hud">
+            <span className="powerup-label">Powerup:</span>
+            <span>{selectedPowerup === 'hourglass' ? 'Hourglass' : 'No powerup selected'}</span>
+            <button
+              className="action-btn secondary"
+              type="button"
+              onClick={handleUsePowerup}
+              disabled={!selectedPowerup || powerupUsed}
+            >
+              {powerupUsed ? 'Powerup Used' : 'Use Hourglass'}
+            </button>
+            {timeSlowActive && <span className="powerup-status">⏳ Slow time active</span>}
+          </div>
         </div>
       </div>
 
@@ -777,7 +927,16 @@ export default function ChaoticButtonGameHardMode() {
         <button className="big-button" ref={buttonRef} onClick={handleButtonClick}>
           PRESS
         </button>
-        <div className={`billcipher${billcipherActive ? ' active' : ''}`} ref={billcipherRef} />
+        {billcipherActive && (
+          <div className={`billcipher${billcipherVisible ? ' active' : ''}`} ref={billcipherRef} />
+        )}
+        {redHazardVisible && Array.from({ length: redHazardCount }).map((_, index) => (
+          <div
+            key={`red-${index}`}
+            className="red-hazard"
+            ref={(el: HTMLDivElement | null) => { redHazardElsRef.current[index] = el; }}
+          />
+        ))}
         {Array.from({ length: config.numBlockers }).map((_, index) => (
           <div
             key={index}
