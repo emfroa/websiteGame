@@ -83,7 +83,19 @@ const powerupLabel = (type: PowerupType) => ({ hourglass: 'Hourglass', money: 'M
 const getDifficultyStage = (roundIndex: number) =>
   roundIndex < 5 ? 'Easy' : roundIndex < 12 ? 'Medium' : 'Hard';
 
-type GamePhase = 'username' | 'powerupSelect' | 'playing' | 'levelComplete' | 'gameOver' | 'finished' | 'gambling';
+type GamePhase = 'username' | 'powerupSelect' | 'playing' | 'levelComplete' | 'gameOver' | 'finished' | 'gambling' | 'pikabattle';
+
+interface BattleState {
+  playerHp: number;
+  playerMaxHp: number;
+  pikachuHp: number;
+  pikachuMaxHp: number;
+  turn: 'player' | 'end';
+  log: string[];
+  thunderUsed: boolean;
+  potionsLeft: number;
+  growled: boolean;
+}
 
 interface ScoreRecord {
   username: string;
@@ -123,6 +135,8 @@ export default function ChaoticButtonGameHardMode() {
   const [levelStartTime, setLevelStartTime] = useState(0);
   const [savingScore, setSavingScore]       = useState(false);
   const [saveMessage, setSaveMessage]       = useState('');
+  const [scoreSaved, setScoreSaved]         = useState(false);
+  const [gameOverReason, setGameOverReason] = useState('');
   const [gambleTimeLeft, setGambleTimeLeft] = useState(0);
   const [gambleOutcome, setGambleOutcome]   = useState<boolean | null>(null);
   const [gambleResult, setGambleResult]     = useState<'pending' | 'won' | 'lost' | null>(null);
@@ -137,6 +151,9 @@ export default function ChaoticButtonGameHardMode() {
   const [freezeCollectibleVisible, setFreezeCollectibleVisible] = useState(false);
   const [freezePos, setFreezePos] = useState<{ x: number; y: number } | null>(null);
   const [freezeActive, setFreezeActive] = useState(false);
+  const [pikachuActive, setPikachuActive] = useState(false);
+  const [pikachuVisible, setPikachuVisible] = useState(false);
+  const [battleState, setBattleState] = useState<BattleState | null>(null);
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
@@ -171,11 +188,23 @@ export default function ChaoticButtonGameHardMode() {
   const invincibleTimerRef = useRef<number | null>(null);
   const freezeTimerRef = useRef<number | null>(null);
   const freezeSpawnTimerRef = useRef<number | null>(null);
+  const pikachuRef = useRef<HTMLDivElement | null>(null);
+  const pikachuPosRef = useRef({ x: 0, y: 0 });
+  const pikachuEnabledRef = useRef(false);
+  const pikachuVisibleRef = useRef(false);
+  const pikachuTimerRef = useRef<number | null>(null);
+  const skipLevelReset = useRef(false);
   const phaseRef   = useRef<GamePhase>('username');
   const levelRef   = useRef(0);
 
   // Keep refs in sync
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => {
+    phaseRef.current = phase;
+    if (phase === 'gameOver') {
+      setGameOverReason(prev => prev || saveMessage || `Knocked out during round ${currentLevel + 1}.`);
+      setScoreSaved(false);
+    }
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { levelRef.current = currentLevel; }, [currentLevel]);
   useEffect(() => { billcipherVisibleRef.current = billcipherVisible; }, [billcipherVisible]);
   useEffect(() => { redHazardVisibleRef.current = redHazardVisible; }, [redHazardVisible]);
@@ -184,6 +213,7 @@ export default function ChaoticButtonGameHardMode() {
   useEffect(() => { livesRef.current = lives; }, [lives]);
   useEffect(() => { invincibleRef.current = invincible; }, [invincible]);
   useEffect(() => { freezeActiveRef.current = freezeActive; }, [freezeActive]);
+  useEffect(() => { pikachuVisibleRef.current = pikachuVisible; }, [pikachuVisible]);
 
   useEffect(() => {
     return () => {
@@ -411,6 +441,90 @@ export default function ChaoticButtonGameHardMode() {
     }, 3000);
   }, []);
 
+  const handlePikachuCollision = useCallback(() => {
+    if (phaseRef.current !== 'playing') return;
+    if (invincibleRef.current || shieldActiveRef.current) return;
+    setPikachuVisible(false);
+    pikachuVisibleRef.current = false;
+    const maxPikachuHp = Math.min(150, 60 + levelRef.current * 4);
+    setBattleState({
+      playerHp: 100,
+      playerMaxHp: 100,
+      pikachuHp: maxPikachuHp,
+      pikachuMaxHp: maxPikachuHp,
+      turn: 'player',
+      log: ['⚡ A wild Pikachu appeared! Pika pika!', 'What will you do?'],
+      thunderUsed: false,
+      potionsLeft: 2,
+      growled: false,
+    });
+    setPhase('pikabattle');
+  }, []);
+
+  const handleBattleMove = useCallback((move: 'splash' | 'tackle' | 'thunder' | 'potion') => {
+    setBattleState(prev => {
+      if (!prev || prev.turn !== 'player') return prev;
+      const next: BattleState = { ...prev, log: [...prev.log] };
+
+      if (move === 'potion') {
+        if (prev.potionsLeft <= 0) { next.log.push('No potions left!'); return next; }
+        const heal = Math.round(randomBetween(20, 30));
+        next.playerHp = Math.min(prev.playerMaxHp, prev.playerHp + heal);
+        next.potionsLeft = prev.potionsLeft - 1;
+        next.log.push(`💊 Used Potion! Healed ${heal} HP.`);
+      } else {
+        const growlMult = prev.growled ? 0.6 : 1;
+        let dmg = 0;
+        if (move === 'splash') {
+          dmg = Math.round(randomBetween(8, 15) * growlMult);
+          next.log.push(`💦 Splash! Pikachu took ${dmg} damage.`);
+        } else if (move === 'tackle') {
+          dmg = Math.round(randomBetween(18, 28) * growlMult);
+          next.log.push(`💥 Tackle! Pikachu took ${dmg} damage.`);
+        } else {
+          if (prev.thunderUsed) { next.log.push('Thunder already used!'); return next; }
+          dmg = Math.round(randomBetween(30, 45) * growlMult);
+          next.thunderUsed = true;
+          next.log.push(`⚡ THUNDER! Pikachu took ${dmg} damage!`);
+        }
+        next.growled = false;
+        next.pikachuHp = Math.max(0, prev.pikachuHp - dmg);
+      }
+
+      if (next.pikachuHp <= 0) {
+        next.log.push('🎉 Pikachu fainted! You won the battle!');
+        next.turn = 'end';
+        return next;
+      }
+
+      // Pikachu's counter-attack
+      const roll = Math.random();
+      let pikaDmg = 0;
+      if (roll < 0.15) {
+        pikaDmg = Math.round(randomBetween(32, 45));
+        next.log.push(`⚡ Pikachu used THUNDER! You took ${pikaDmg} damage!`);
+      } else if (roll < 0.30) {
+        next.growled = true;
+        next.log.push('📣 Pikachu used Growl! Your next attack is weakened!');
+      } else if (roll < 0.65) {
+        pikaDmg = Math.round(randomBetween(15, 25));
+        next.log.push(`⚡ Pikachu used Thunder Shock! You took ${pikaDmg} damage!`);
+      } else {
+        pikaDmg = Math.round(randomBetween(10, 18));
+        next.log.push(`💨 Pikachu used Quick Attack! You took ${pikaDmg} damage!`);
+      }
+      next.playerHp = Math.max(0, next.playerHp - pikaDmg);
+
+      if (next.playerHp <= 0) {
+        next.log.push('💀 You fainted! Pikachu wins...');
+        next.turn = 'end';
+      } else {
+        next.log.push('What will you do?');
+      }
+      return next;
+    });
+  }, []);
+
   const loadLeaderboard = useCallback(async () => {
     setLeaderboardLoading(true);
     setLeaderboardError(null);
@@ -574,6 +688,32 @@ export default function ChaoticButtonGameHardMode() {
       timeScaleRef.current = 1;
       setInvincible(false);
       invincibleRef.current = false;
+      setPikachuActive(false);
+      setPikachuVisible(false);
+      pikachuEnabledRef.current = false;
+      pikachuVisibleRef.current = false;
+      if (pikachuTimerRef.current) window.clearTimeout(pikachuTimerRef.current);
+      if (!skipLevelReset.current) {
+        const hasPikachu = Math.random() < 0.4;
+        setPikachuActive(hasPikachu);
+        pikachuEnabledRef.current = hasPikachu;
+        if (hasPikachu) {
+          const game = gameRef.current;
+          if (game) {
+            pikachuPosRef.current = {
+              x: randomBetween(0, Math.max(0, game.clientWidth - 56)),
+              y: randomBetween(0, Math.max(0, game.clientHeight - 56)),
+            };
+          }
+          pikachuTimerRef.current = window.setTimeout(() => {
+            if (phaseRef.current === 'playing' && pikachuEnabledRef.current) {
+              setPikachuVisible(true);
+              pikachuVisibleRef.current = true;
+            }
+          }, 4000 + Math.random() * 3000);
+        }
+      }
+      skipLevelReset.current = false;
       setFreezeCollectibleVisible(false);
       setFreezePos(null);
       setFreezeActive(false);
@@ -604,6 +744,7 @@ export default function ChaoticButtonGameHardMode() {
       if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
       if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
       if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
+      if (pikachuTimerRef.current) window.clearTimeout(pikachuTimerRef.current);
     };
   }, [phase, currentLevel, randomPos, initGambleDots, initRedHazards]);
 
@@ -743,6 +884,31 @@ export default function ChaoticButtonGameHardMode() {
             }
           }
         }
+
+        if (pikachuEnabledRef.current && pikachuRef.current && pikachuVisibleRef.current) {
+          const pika = pikachuRef.current;
+          const pos = pikachuPosRef.current;
+          const pdx = cursorXRef.current - pos.x;
+          const pdy = cursorYRef.current - pos.y;
+          const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+          const pikaSpeed = freezeActiveRef.current ? 0 : 2.8 * timeScaleRef.current;
+
+          if (pdist > 0 && pikaSpeed > 0) {
+            const step = Math.min(pikaSpeed, pdist);
+            pos.x += (pdx / pdist) * step;
+            pos.y += (pdy / pdist) * step;
+          }
+
+          pos.x = clamp(pos.x, 0, game.clientWidth - pika.clientWidth);
+          pos.y = clamp(pos.y, 0, game.clientHeight - pika.clientHeight);
+          pika.style.left = `${pos.x}px`;
+          pika.style.top = `${pos.y}px`;
+
+          if (Math.hypot(pos.x - cursorXRef.current, pos.y - cursorYRef.current) < 32) {
+            handlePikachuCollision();
+            return;
+          }
+        }
       }
       updateFrame = requestAnimationFrame(update);
     };
@@ -861,7 +1027,8 @@ export default function ChaoticButtonGameHardMode() {
         }),
       });
       if (res.ok) {
-        setSaveMessage('✅ Score saved! Check the leaderboard.');
+        setSaveMessage('✅ Score saved!');
+        setScoreSaved(true);
         await loadLeaderboard();
       } else {
         const data = await res.json().catch(() => null);
@@ -883,6 +1050,7 @@ export default function ChaoticButtonGameHardMode() {
     if (invincibleTimerRef.current) window.clearTimeout(invincibleTimerRef.current);
     if (freezeTimerRef.current) window.clearTimeout(freezeTimerRef.current);
     if (freezeSpawnTimerRef.current) window.clearTimeout(freezeSpawnTimerRef.current);
+    if (pikachuTimerRef.current) window.clearTimeout(pikachuTimerRef.current);
     setLives(3);
     livesRef.current = 3;
     setInvincible(false);
@@ -891,6 +1059,13 @@ export default function ChaoticButtonGameHardMode() {
     setFreezePos(null);
     setFreezeActive(false);
     freezeActiveRef.current = false;
+    setPikachuActive(false);
+    setPikachuVisible(false);
+    pikachuEnabledRef.current = false;
+    pikachuVisibleRef.current = false;
+    pikachuPosRef.current = { x: 0, y: 0 };
+    setBattleState(null);
+    skipLevelReset.current = false;
     setCurrentLevel(0);
     setRoundScores([]);
     setRoundConfig(generateRoundConfig(0));
@@ -914,6 +1089,8 @@ export default function ChaoticButtonGameHardMode() {
     setTimeSlowActive(false);
     timeScaleRef.current = 1;
     setSaveMessage('');
+    setScoreSaved(false);
+    setGameOverReason('');
     setLocalLoadError(null);
     setPhase('username');
   };
@@ -1047,14 +1224,47 @@ export default function ChaoticButtonGameHardMode() {
       <div className="app-shell">
         <h1 className="title">GAME OVER</h1>
         <div className="overlay-card">
-          <p className="overlay-sub">{saveMessage || `You were hit during round ${currentLevel + 1}.`}</p>
+          <p className="overlay-sub">Player: <strong>{username}</strong></p>
+          {gameOverReason && <p className="overlay-sub">{gameOverReason}</p>}
           <p className="score-total">Final Score: {totalScore} pts</p>
-          {saveMessage ? (
-            <p className="save-msg">{saveMessage}</p>
-          ) : (
+          <p className="overlay-sub">Rounds survived: {roundScores.length}</p>
+          {roundScores.length > 0 && (
+            <div className="score-breakdown">
+              {roundScores.map((s, i) => (
+                <div key={i} className="score-row">
+                  <span>Round {i + 1}</span>
+                  <span>{s} pts</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {!scoreSaved ? (
             <button className="action-btn" onClick={handleSaveScore} disabled={savingScore}>
-              {savingScore ? 'Saving…' : 'Save Score to Leaderboard'}
+              {savingScore ? 'Saving…' : 'Submit Score to Leaderboard'}
             </button>
+          ) : (
+            <>
+              <p className="save-msg">{saveMessage}</p>
+              <div className="leaderboard-card">
+                <h3>Leaderboard</h3>
+                {leaderboardLoading ? (
+                  <p>Loading…</p>
+                ) : leaderboardError ? (
+                  <p className="error-msg">{leaderboardError}</p>
+                ) : leaderboard.length === 0 ? (
+                  <p>No scores yet.</p>
+                ) : (
+                  <div className="leaderboard-table">
+                    {leaderboard.slice(0, 10).map((entry, i) => (
+                      <div key={i} className={`leaderboard-row${entry.username === username ? ' leaderboard-row-you' : ''}`}>
+                        <span>{i + 1}. {entry.username}</span>
+                        <span>{entry.totalScore} pts</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
           <button className="action-btn danger" onClick={handleRestart}>Try Again</button>
         </div>
@@ -1110,6 +1320,100 @@ export default function ChaoticButtonGameHardMode() {
           </div>
           <button className="action-btn secondary" onClick={handleStartGamble}>Gamble your score</button>
           <button className="action-btn secondary" onClick={handleRestart}>Play Again</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Render: pikabattle ──────────────────────────────────────────────────
+  if (phase === 'pikabattle' && battleState) {
+    const playerPct   = Math.max(0, (battleState.playerHp / battleState.playerMaxHp) * 100);
+    const pikaPct     = Math.max(0, (battleState.pikachuHp / battleState.pikachuMaxHp) * 100);
+    const playerHpColor = playerPct > 50 ? '#4caf50' : playerPct > 20 ? '#ff9800' : '#f44336';
+    const pikaHpColor   = pikaPct   > 50 ? '#4caf50' : pikaPct   > 20 ? '#ff9800' : '#f44336';
+    const battleOver  = battleState.turn === 'end';
+    const playerWon   = battleOver && battleState.pikachuHp <= 0;
+
+    const handleBattleEnd = () => {
+      setBattleState(null);
+      if (playerWon) {
+        handleNextLevel();
+      } else {
+        const newLives = livesRef.current - 1;
+        setLives(newLives);
+        livesRef.current = newLives;
+        if (newLives <= 0) {
+          setPhase('gameOver');
+        } else {
+          setPikachuActive(false);
+          pikachuEnabledRef.current = false;
+          skipLevelReset.current = true;
+          setPhase('playing');
+        }
+      }
+    };
+
+    return (
+      <div className="app-shell">
+        <h1 className="title battle-title">POKEMON BATTLE!</h1>
+        <div className="battle-screen">
+          <div className="battle-enemy-side">
+            <div className="battle-name-box">
+              <span className="battle-name">PIKACHU</span>
+              <span className="battle-level">Lv.{Math.min(50, 5 + currentLevel * 2)}</span>
+            </div>
+            <div className="battle-hp-bar-wrap">
+              <span className="battle-hp-label">HP</span>
+              <div className="battle-hp-track">
+                <div className="battle-hp-fill" style={{ width: `${pikaPct}%`, background: pikaHpColor }} />
+              </div>
+              <span className="battle-hp-num">{battleState.pikachuHp}/{battleState.pikachuMaxHp}</span>
+            </div>
+            <img src="/img/pikachu.png" className="battle-pikachu-sprite" alt="Pikachu" />
+          </div>
+
+          <div className="battle-player-side">
+            <div className="battle-name-box battle-name-box-right">
+              <span className="battle-name">{username.toUpperCase() || 'YOU'}</span>
+              <span className="battle-level">Lv.{Math.min(50, 10 + currentLevel)}</span>
+            </div>
+            <div className="battle-hp-bar-wrap">
+              <span className="battle-hp-label">HP</span>
+              <div className="battle-hp-track">
+                <div className="battle-hp-fill" style={{ width: `${playerPct}%`, background: playerHpColor }} />
+              </div>
+              <span className="battle-hp-num">{battleState.playerHp}/{battleState.playerMaxHp}</span>
+            </div>
+          </div>
+
+          <div className="battle-log">
+            {battleState.log.slice(-4).map((line, i) => (
+              <p key={i} className="battle-log-line">{line}</p>
+            ))}
+          </div>
+
+          {!battleOver ? (
+            <div className="battle-moves">
+              <button className="battle-move-btn" onClick={() => handleBattleMove('splash')}>💦 Splash</button>
+              <button className="battle-move-btn" onClick={() => handleBattleMove('tackle')}>💥 Tackle</button>
+              <button className="battle-move-btn battle-move-thunder" onClick={() => handleBattleMove('thunder')} disabled={battleState.thunderUsed}>
+                ⚡ Thunder{battleState.thunderUsed ? ' (used)' : ''}
+              </button>
+              <button className="battle-move-btn battle-move-potion" onClick={() => handleBattleMove('potion')} disabled={battleState.potionsLeft === 0}>
+                💊 Potion ({battleState.potionsLeft} left)
+              </button>
+            </div>
+          ) : (
+            <div className="battle-outcome">
+              {playerWon
+                ? <p className="battle-result-win">🏆 Victory! Advancing to next round...</p>
+                : <p className="battle-result-lose">💀 Defeat! You lost a life. (-1 ♥)</p>
+              }
+              <button className="action-btn" onClick={handleBattleEnd}>
+                {playerWon ? 'Next Round →' : 'Continue...'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1256,6 +1560,12 @@ export default function ChaoticButtonGameHardMode() {
             ref={(el: HTMLDivElement | null) => { redHazardElsRef.current[index] = el; }}
           />
         ))}
+        {pikachuActive && (
+          <div
+            className={`pikachu-enemy${pikachuVisible ? ' active' : ''}`}
+            ref={pikachuRef}
+          />
+        )}
         {freezeCollectibleVisible && freezePos && (
           <div
             className="freeze-collectible"
