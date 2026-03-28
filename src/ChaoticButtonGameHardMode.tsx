@@ -668,15 +668,17 @@ export default function ChaoticButtonGameHardMode() {
           const dy   = cursorYRef.current - by;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (Math.random() < cfg.randomTeleportChance * timeScaleRef.current) randomPos(button);
+          if (!freezeActiveRef.current) {
+            if (Math.random() < cfg.randomTeleportChance * timeScaleRef.current) randomPos(button);
 
-          if (dist < cfg.escapeRadius) {
-            button.style.left = `${clamp(button.offsetLeft - dx * cfg.escapeStrength, 0, game.clientWidth  - button.clientWidth)}px`;
-            button.style.top  = `${clamp(button.offsetTop  - dy * cfg.escapeStrength, 0, game.clientHeight - button.clientHeight)}px`;
-          }
+            if (dist < cfg.escapeRadius) {
+              button.style.left = `${clamp(button.offsetLeft - dx * cfg.escapeStrength, 0, game.clientWidth  - button.clientWidth)}px`;
+              button.style.top  = `${clamp(button.offsetTop  - dy * cfg.escapeStrength, 0, game.clientHeight - button.clientHeight)}px`;
+            }
 
-          if (cfg.windEnabled) {
-            button.style.left = `${clamp(button.offsetLeft + windForceRef.current * 0.08 * timeScaleRef.current, 0, game.clientWidth - button.clientWidth)}px`;
+            if (cfg.windEnabled) {
+              button.style.left = `${clamp(button.offsetLeft + windForceRef.current * 0.08 * timeScaleRef.current, 0, game.clientWidth - button.clientWidth)}px`;
+            }
           }
         });
 
