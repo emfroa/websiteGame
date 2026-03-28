@@ -307,6 +307,44 @@ body {
   text-align: left;
 }
 
+.leaderboard-card {
+  width: 100%;
+  background: #111;
+  border: 2px solid #333;
+  border-radius: 12px;
+  padding: 18px;
+  margin-top: 14px;
+  text-align: left;
+}
+
+.leaderboard-card h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: #ffd700;
+}
+
+.leaderboard-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leaderboard-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #ddd;
+  font-size: 0.95rem;
+}
+
+.error-msg {
+  margin: 0;
+  color: #f88;
+}
+
 .score-row {
   display: flex;
   justify-content: space-between;

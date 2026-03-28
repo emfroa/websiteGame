@@ -115,6 +115,13 @@ const LEVELS: LevelConfig[] = [
 
 type GamePhase = 'username' | 'playing' | 'levelComplete' | 'gameOver' | 'finished';
 
+interface ScoreRecord {
+  username: string;
+  totalScore: number;
+  totalTime: number;
+  date: string;
+}
+
 // ─── Score helpers ─────────────────────────────────────────────────────────────
 function calcLevelScore(base: number, elapsed: number, timeLimit: number): number {
   if (timeLimit === 0) return base;
@@ -135,6 +142,9 @@ export default function ChaoticButtonGameHardMode() {
   const [levelStartTime, setLevelStartTime] = useState(0);
   const [savingScore, setSavingScore]       = useState(false);
   const [saveMessage, setSaveMessage]       = useState('');
+  const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
 
   const gameRef    = useRef<HTMLDivElement | null>(null);
   const buttonRef  = useRef<HTMLButtonElement | null>(null);
@@ -160,6 +170,29 @@ export default function ChaoticButtonGameHardMode() {
     el.style.left = `${Math.random() * maxX}px`;
     el.style.top  = `${Math.random() * maxY}px`;
   }, []);
+
+  const loadLeaderboard = useCallback(async () => {
+    setLeaderboardLoading(true);
+    setLeaderboardError(null);
+
+    try {
+      const res = await fetch('/api/scores');
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data?.message || 'Failed to load leaderboard');
+      }
+      setLeaderboard(data.scores ?? []);
+    } catch (error) {
+      console.error('Leaderboard load failed', error);
+      setLeaderboardError(error instanceof Error ? error.message : 'Unable to load leaderboard');
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLeaderboard();
+  }, [loadLeaderboard]);
 
   // ── Initial placement when level starts ──────────────────────────────────
   useLayoutEffect(() => {
@@ -316,8 +349,10 @@ export default function ChaoticButtonGameHardMode() {
       });
       if (res.ok) {
         setSaveMessage('✅ Score saved! Check the leaderboard.');
+        await loadLeaderboard();
       } else {
-        setSaveMessage('⚠️ Server error. Score not saved.');
+        const data = await res.json().catch(() => null);
+        setSaveMessage(`⚠️ Server error. ${data?.message ?? 'Score not saved.'}`);
       }
     } catch {
       setSaveMessage('⚠️ Could not reach server. Score not saved.');
@@ -366,6 +401,25 @@ export default function ChaoticButtonGameHardMode() {
           >
             Start Game
           </button>
+          <div className="leaderboard-card">
+            <h3>Leaderboard</h3>
+            {leaderboardLoading ? (
+              <p>Loading leaderboard…</p>
+            ) : leaderboardError ? (
+              <p className="error-msg">{leaderboardError}</p>
+            ) : leaderboard.length === 0 ? (
+              <p>No scores yet.</p>
+            ) : (
+              <div className="leaderboard-table">
+                {leaderboard.slice(0, 10).map((entry, index) => (
+                  <div key={index} className="leaderboard-row">
+                    <span>{index + 1}. {entry.username}</span>
+                    <span>{entry.totalScore} pts</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -431,6 +485,25 @@ export default function ChaoticButtonGameHardMode() {
               </button>
             )
           }
+          <div className="leaderboard-card">
+            <h3>Leaderboard</h3>
+            {leaderboardLoading ? (
+              <p>Loading leaderboard…</p>
+            ) : leaderboardError ? (
+              <p className="error-msg">{leaderboardError}</p>
+            ) : leaderboard.length === 0 ? (
+              <p>No scores yet.</p>
+            ) : (
+              <div className="leaderboard-table">
+                {leaderboard.slice(0, 10).map((entry, index) => (
+                  <div key={index} className="leaderboard-row">
+                    <span>{index + 1}. {entry.username}</span>
+                    <span>{entry.totalScore} pts</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button className="action-btn secondary" onClick={handleRestart}>Play Again</button>
         </div>
       </div>
