@@ -113,7 +113,7 @@ const LEVELS: LevelConfig[] = [
   },
 ];
 
-type GamePhase = 'username' | 'playing' | 'levelComplete' | 'gameOver' | 'finished';
+type GamePhase = 'username' | 'playing' | 'levelComplete' | 'gameOver' | 'finished' | 'gambling';
 
 interface ScoreRecord {
   username: string;
@@ -142,6 +142,9 @@ export default function ChaoticButtonGameHardMode() {
   const [levelStartTime, setLevelStartTime] = useState(0);
   const [savingScore, setSavingScore]       = useState(false);
   const [saveMessage, setSaveMessage]       = useState('');
+  const [gambleTimeLeft, setGambleTimeLeft] = useState(0);
+  const [gambleOutcome, setGambleOutcome]   = useState<boolean | null>(null);
+  const [gambleResult, setGambleResult]     = useState<'pending' | 'won' | 'lost' | null>(null);
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
@@ -149,6 +152,8 @@ export default function ChaoticButtonGameHardMode() {
   const gameRef    = useRef<HTMLDivElement | null>(null);
   const buttonRef  = useRef<HTMLButtonElement | null>(null);
   const blockersRef = useRef<(HTMLDivElement | null)[]>([]);
+  const gambleDotsRef = useRef<{ x: number; y: number }[]>([]);
+  const gambleDotElsRef = useRef<(HTMLDivElement | null)[]>([]);
   const cursorXRef = useRef(0);
   const cursorYRef = useRef(0);
   const windForceRef = useRef(0);
@@ -169,6 +174,33 @@ export default function ChaoticButtonGameHardMode() {
     const maxY = Math.max(game.clientHeight - el.clientHeight, 0);
     el.style.left = `${Math.random() * maxX}px`;
     el.style.top  = `${Math.random() * maxY}px`;
+  }, []);
+
+  const initGambleDots = useCallback((count = 5) => {
+    const game = gameRef.current;
+    if (!game) return;
+
+    const dots = Array.from({ length: count }, () => ({
+      x: Math.random() * Math.max(0, game.clientWidth - 20),
+      y: Math.random() * Math.max(0, game.clientHeight - 20),
+    }));
+
+    gambleDotsRef.current = dots;
+    dots.forEach((dot, index) => {
+      const dotEl = gambleDotElsRef.current[index];
+      if (dotEl) {
+        dotEl.style.left = `${dot.x}px`;
+        dotEl.style.top = `${dot.y}px`;
+      }
+    });
+  }, []);
+
+  const handleStartGamble = useCallback(() => {
+    setGambleOutcome(Math.random() < 0.5);
+    setGambleTimeLeft(7);
+    setGambleResult('pending');
+    setSaveMessage('');
+    setPhase('gambling');
   }, []);
 
   const loadLeaderboard = useCallback(async () => {
@@ -194,12 +226,114 @@ export default function ChaoticButtonGameHardMode() {
     loadLeaderboard();
   }, [loadLeaderboard]);
 
+  useEffect(() => {
+    if (phase !== 'gambling') return;
+    initGambleDots(5);
+    setGambleTimeLeft(7);
+
+    let animationFrame = 0;
+    let intervalId = 0;
+    let active = true;
+
+    const finishGamble = (won: boolean, message: string) => {
+      if (!active) return;
+      active = false;
+      window.clearInterval(intervalId);
+      cancelAnimationFrame(animationFrame);
+
+      if (won) {
+        setTotalScore(prev => prev * 2);
+        setSaveMessage('🎉 Gamble succeeded! Score doubled.');
+        setGambleResult('won');
+      } else {
+        setTotalScore(0);
+        setSaveMessage(message);
+        setGambleResult('lost');
+      }
+      setPhase('finished');
+    };
+
+    const animateDots = () => {
+      if (!active || phaseRef.current !== 'gambling') return;
+      const game = gameRef.current;
+      if (game) {
+        gambleDotsRef.current.forEach((dot, index) => {
+          const dx = cursorXRef.current - dot.x;
+          const dy = cursorYRef.current - dot.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const speed = 2.5;
+
+          if (dist > 0) {
+            const step = Math.min(speed, dist);
+            dot.x += (dx / dist) * step;
+            dot.y += (dy / dist) * step;
+          }
+
+          dot.x = clamp(dot.x, 0, game.clientWidth - 16);
+          dot.y = clamp(dot.y, 0, game.clientHeight - 16);
+
+          const dotEl = gambleDotElsRef.current[index];
+          if (dotEl) {
+            dotEl.style.left = `${dot.x}px`;
+            dotEl.style.top = `${dot.y}px`;
+          }
+
+          if (Math.hypot(dot.x - cursorXRef.current, dot.y - cursorYRef.current) < 16) {
+            finishGamble(false, '💀 You were touched by a red hunter. Score lost.');
+          }
+        });
+
+        const button = buttonRef.current;
+        if (button) {
+          const bx = button.offsetLeft + button.clientWidth / 2;
+          const by = button.offsetTop + button.clientHeight / 2;
+          const dx = cursorXRef.current - bx;
+          const dy = cursorYRef.current - by;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (Math.random() < 0.015) randomPos(button);
+          if (dist < 220) {
+            button.style.left = `${clamp(button.offsetLeft - dx * 0.25, 0, game.clientWidth - button.clientWidth)}px`;
+            button.style.top  = `${clamp(button.offsetTop - dy * 0.25, 0, game.clientHeight - button.clientHeight)}px`;
+          }
+        }
+      }
+      if (active) {
+        animationFrame = requestAnimationFrame(animateDots);
+      }
+    };
+
+    animateDots();
+
+    const startTime = Date.now();
+    intervalId = window.setInterval(() => {
+      if (!active || phaseRef.current !== 'gambling') return;
+      const elapsed = (Date.now() - startTime) / 1000;
+      const remaining = Math.max(0, 7 - elapsed);
+      setGambleTimeLeft(Math.ceil(remaining));
+      if (remaining <= 0) {
+        finishGamble(false, '💀 Time ran out. Score lost.');
+      }
+    }, 150);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      cancelAnimationFrame(animationFrame);
+    };
+  }, [phase, initGambleDots, gambleOutcome]);
+
   // ── Initial placement when level starts ──────────────────────────────────
   useLayoutEffect(() => {
-    if (phase !== 'playing') return;
+    if (phase !== 'playing' && phase !== 'gambling') return;
     if (buttonRef.current) randomPos(buttonRef.current);
-    blockersRef.current.forEach(b => { if (b) randomPos(b); });
-  }, [phase, currentLevel, randomPos]);
+    if (phase === 'playing') {
+      blockersRef.current.forEach(b => { if (b) randomPos(b); });
+    }
+    if (phase === 'gambling') {
+      initGambleDots(5);
+    }
+  }, [phase, currentLevel, randomPos, initGambleDots]);
 
   // ── Level timer ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -312,16 +446,31 @@ export default function ChaoticButtonGameHardMode() {
 
   // ── Button clicked → level complete ────────────────────────────────────
   const handleButtonClick = () => {
-    if (phaseRef.current !== 'playing') return;
-    const cfg    = LEVELS[currentLevel];
-    const elapsed = cfg.timeLimit > 0
-      ? cfg.timeLimit - Math.max(0, (cfg.timeLimit - (Date.now() - levelStartTime) / 1000))
-      : 0;
-    const score  = calcLevelScore(cfg.pointsBase, elapsed, cfg.timeLimit);
-    const newScores = [...levelScores, score];
-    setLevelScores(newScores);
-    setTotalScore(prev => prev + score);
-    setPhase('levelComplete');
+    if (phaseRef.current === 'playing') {
+      const cfg    = LEVELS[currentLevel];
+      const elapsed = cfg.timeLimit > 0
+        ? cfg.timeLimit - Math.max(0, (cfg.timeLimit - (Date.now() - levelStartTime) / 1000))
+        : 0;
+      const score  = calcLevelScore(cfg.pointsBase, elapsed, cfg.timeLimit);
+      const newScores = [...levelScores, score];
+      setLevelScores(newScores);
+      setTotalScore(prev => prev + score);
+      setPhase('levelComplete');
+      return;
+    }
+
+    if (phaseRef.current === 'gambling') {
+      if (gambleOutcome) {
+        setTotalScore(prev => prev * 2);
+        setSaveMessage('🎉 You clicked the gamble button! Score doubled.');
+        setGambleResult('won');
+      } else {
+        setTotalScore(0);
+        setSaveMessage('💀 You clicked the button, but the gamble failed.');
+        setGambleResult('lost');
+      }
+      setPhase('finished');
+    }
   };
 
   // ── Advance to next level or finish ─────────────────────────────────────
@@ -368,6 +517,10 @@ export default function ChaoticButtonGameHardMode() {
     setTotalScore(0);
     setWind('0.0');
     windForceRef.current = 0;
+    setGambleTimeLeft(0);
+    setGambleOutcome(null);
+    setGambleResult(null);
+    gambleDotsRef.current = [];
     setSaveMessage('');
     setPhase('username');
   };
@@ -504,7 +657,44 @@ export default function ChaoticButtonGameHardMode() {
               </div>
             )}
           </div>
+          <button className="action-btn secondary" onClick={handleStartGamble}>Gamble your score</button>
           <button className="action-btn secondary" onClick={handleRestart}>Play Again</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Render: gambling ─────────────────────────────────────────────────────
+  if (phase === 'gambling') {
+    return (
+      <div className="app-shell">
+        <h1 className="title">GAMBLE MODE</h1>
+        <div className="overlay-card">
+          <p className="overlay-sub">Survive the red hunters for 7 seconds.</p>
+          <p className="score-total">Current Score: {totalScore} pts</p>
+          <p className="score-total">Time remaining: {gambleTimeLeft}s</p>
+          <p className="score-total">Click the moving button before the red hunters catch you.</p>
+          <p className="score-total">When you click: 50% double score, 50% lose everything.</p>
+          <button className="action-btn danger" onClick={() => {
+            setTotalScore(0);
+            setGambleResult('lost');
+            setSaveMessage('💀 You gave up. Score lost.');
+            setPhase('finished');
+          }}>
+            Give Up
+          </button>
+        </div>
+        <div className="game-area" ref={gameRef} onMouseMove={handleMouseMove}>
+          <button className="big-button" ref={buttonRef} onClick={handleButtonClick}>
+            PRESS
+          </button>
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="gamble-dot"
+              ref={(el: HTMLDivElement | null) => { gambleDotElsRef.current[index] = el; }}
+            />
+          ))}
         </div>
       </div>
     );
