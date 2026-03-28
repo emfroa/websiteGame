@@ -1,29 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import type { MouseEvent } from 'react';
 import './ChaoticButtonGameHardMode.css';
-
-// ─── MongoDB scaffold ──────────────────────────────────────────────────────────
-// Replace MONGO_URI with your actual connection string.
-// Backend endpoint expected at /api/scores (POST)
-// Schema: { username: string, totalScore: number, totalTime: number, date: Date }
-// Example server snippet (Express + mongoose):
-//
-//   const scoreSchema = new mongoose.Schema({
-//     username:   { type: String, required: true },
-//     totalScore: { type: Number, required: true },
-//     totalTime:  { type: Number, required: true },  // seconds
-//     date:       { type: Date,   default: Date.now },
-//   });
-//   const Score = mongoose.model('Score', scoreSchema);
-//
-//   app.post('/api/scores', async (req, res) => {
-//     const entry = new Score(req.body);
-//     await entry.save();
-//     res.json({ ok: true });
-//   });
-// ──────────────────────────────────────────────────────────────────────────────
-
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
+
+type PowerupType = 'hourglass' | 'money' | 'shield';
+
+const POWERUP_CHOICES: Array<{ type: PowerupType; label: string; description: string; image: string }> = [
+  { type: 'hourglass', label: 'Hourglass', description: 'Slow hazards for 6 seconds.', image: '/img/hourglass.png' },
+  { type: 'money', label: 'Money', description: 'Double points this round.', image: '/img/money.png' },
+  { type: 'shield', label: 'Shield', description: 'Immune to entities for 10 seconds.', image: '/img/shield.png' },
+];
 
 // ─── Level definitions ─────────────────────────────────────────────────────────
 interface LevelConfig {
@@ -36,89 +24,73 @@ interface LevelConfig {
   randomTeleportChance: number; // 0–1 probability per frame the button randomly teleports
   windEnabled: boolean;
   flashEnabled: boolean;
+  buttonCount: number;      // number of buttons to clear this round
   timeLimit: number;        // seconds per level (0 = no limit)
   pointsBase: number;       // base score for completing the level
 }
 
 const LEVELS: LevelConfig[] = [
   {
-    label: 'Level 1 – Baby Steps',
+    label: 'Easy Round',
     description: 'The button barely moves. A warm‑up.',
     numBlockers: 0, blockerSpeed: 0, escapeRadius: 60, escapeStrength: 0.05,
     randomTeleportChance: 0, windEnabled: false, flashEnabled: false,
-    timeLimit: 30, pointsBase: 100,
+    buttonCount: 1, timeLimit: 0, pointsBase: 120,
   },
   {
-    label: 'Level 2 – It Noticed You',
-    description: 'The button is starting to run.',
-    numBlockers: 0, blockerSpeed: 0, escapeRadius: 120, escapeStrength: 0.15,
-    randomTeleportChance: 0, windEnabled: false, flashEnabled: false,
-    timeLimit: 30, pointsBase: 200,
-  },
-  {
-    label: 'Level 3 – Obstacles Appear',
-    description: 'Two slow blockers patrol the arena.',
-    numBlockers: 2, blockerSpeed: 1, escapeRadius: 150, escapeStrength: 0.2,
-    randomTeleportChance: 0, windEnabled: false, flashEnabled: false,
-    timeLimit: 35, pointsBase: 300,
-  },
-  {
-    label: 'Level 4 – Wind Picks Up',
-    description: 'A random wind now pushes the button sideways.',
-    numBlockers: 2, blockerSpeed: 1.2, escapeRadius: 160, escapeStrength: 0.25,
-    randomTeleportChance: 0, windEnabled: true, flashEnabled: false,
-    timeLimit: 35, pointsBase: 400,
-  },
-  {
-    label: 'Level 5 – Chaos Rising',
-    description: 'Four blockers + wind + occasional random teleport.',
-    numBlockers: 4, blockerSpeed: 1.5, escapeRadius: 180, escapeStrength: 0.3,
+    label: 'Medium Round',
+    description: 'More blockers and a faster button.',
+    numBlockers: 2, blockerSpeed: 1.3, escapeRadius: 140, escapeStrength: 0.2,
     randomTeleportChance: 0.005, windEnabled: true, flashEnabled: false,
-    timeLimit: 40, pointsBase: 500,
+    buttonCount: 2, timeLimit: 0, pointsBase: 240,
   },
   {
-    label: 'Level 6 – Lights Out',
-    description: 'The screen flashes. Your eyes will lie to you.',
-    numBlockers: 4, blockerSpeed: 1.8, escapeRadius: 200, escapeStrength: 0.35,
-    randomTeleportChance: 0.008, windEnabled: true, flashEnabled: true,
-    timeLimit: 40, pointsBase: 700,
-  },
-  {
-    label: 'Level 7 – Six Blockers',
-    description: 'Six fast obstacles and a cowardly button.',
-    numBlockers: 6, blockerSpeed: 2.0, escapeRadius: 220, escapeStrength: 0.4,
-    randomTeleportChance: 0.01, windEnabled: true, flashEnabled: true,
-    timeLimit: 45, pointsBase: 900,
-  },
-  {
-    label: 'Level 8 – Speed Demon',
-    description: 'The button teleports constantly. Faster.',
-    numBlockers: 6, blockerSpeed: 2.5, escapeRadius: 240, escapeStrength: 0.5,
+    label: 'Hard Round',
+    description: 'Everything moves faster. Stay sharp.',
+    numBlockers: 4, blockerSpeed: 2.0, escapeRadius: 200, escapeStrength: 0.4,
     randomTeleportChance: 0.015, windEnabled: true, flashEnabled: true,
-    timeLimit: 45, pointsBase: 1100,
-  },
-  {
-    label: 'Level 9 – Almost Impossible',
-    description: 'Full chaos. Eight blockers. High teleport rate.',
-    numBlockers: 8, blockerSpeed: 3.0, escapeRadius: 260, escapeStrength: 0.6,
-    randomTeleportChance: 0.02, windEnabled: true, flashEnabled: true,
-    timeLimit: 50, pointsBase: 1400,
-  },
-  {
-    label: 'Level 10 – HARD MODE',
-    description: 'You wanted harder. Good luck.',
-    numBlockers: 8, blockerSpeed: 4.0, escapeRadius: 290, escapeStrength: 0.75,
-    randomTeleportChance: 0.025, windEnabled: true, flashEnabled: true,
-    timeLimit: 60, pointsBase: 2000,
+    buttonCount: 3, timeLimit: 0, pointsBase: 420,
   },
 ];
 
-type GamePhase = 'username' | 'playing' | 'levelComplete' | 'gameOver' | 'finished' | 'gambling';
+const generateRoundConfig = (roundIndex: number): LevelConfig => {
+  const stage = roundIndex < 5 ? 0 : roundIndex < 12 ? 1 : 2;
+  const base = LEVELS[stage];
+  return {
+    label: `${base.label} #${roundIndex + 1}`,
+    description: base.description,
+    numBlockers: Math.min(8, Math.max(0, Math.round(base.numBlockers + randomBetween(-1, 2) + roundIndex * 0.15))),
+    blockerSpeed: Math.min(4.5, Math.max(0.5, base.blockerSpeed + randomBetween(-0.4, 0.8) + roundIndex * 0.03)),
+    escapeRadius: Math.min(320, Math.max(80, base.escapeRadius + randomBetween(-20, 30))),
+    escapeStrength: Math.min(0.85, Math.max(0.05, base.escapeStrength + randomBetween(-0.05, 0.1) + roundIndex * 0.006)),
+    randomTeleportChance: Math.min(0.05, Math.max(0, base.randomTeleportChance + randomBetween(-0.003, 0.01) + roundIndex * 0.001)),
+    windEnabled: base.windEnabled || Math.random() < 0.2,
+    flashEnabled: base.flashEnabled || (stage === 2 && Math.random() < 0.25),
+    buttonCount: Math.min(7, Math.max(1, Math.round(randomBetween(1, 3) + stage + roundIndex * 0.06))),
+    timeLimit: 0,
+    pointsBase: Math.round(base.pointsBase + roundIndex * 40 + randomBetween(-30, 40)),
+  };
+};
+
+const ROUND_HISTORY_SIZE = 20;
+
+const INITIAL_POWERUP_HISTORY: PowerupType[] = [];
+
+const LOCAL_SAVE_KEY = 'chaotic-button-game-save';
+
+const powerupLabel = (type: PowerupType) => ({ hourglass: 'Hourglass', money: 'Money', shield: 'Shield' }[type]);
+
+const getDifficultyStage = (roundIndex: number) =>
+  roundIndex < 5 ? 'Easy' : roundIndex < 12 ? 'Medium' : 'Hard';
+
+type GamePhase = 'username' | 'powerupSelect' | 'playing' | 'levelComplete' | 'gameOver' | 'finished' | 'gambling';
 
 interface ScoreRecord {
   username: string;
   totalScore: number;
   totalTime: number;
+  roundsSurvived?: number;
+  powerupHistory?: string[];
   date: string;
 }
 
@@ -135,7 +107,16 @@ export default function ChaoticButtonGameHardMode() {
   const [username, setUsername]     = useState('');
   const [usernameInput, setUsernameInput] = useState('');
   const [currentLevel, setCurrentLevel]   = useState(0);
-  const [levelScores, setLevelScores]     = useState<number[]>([]);
+  const [roundScores, setRoundScores]     = useState<number[]>([]);
+  const [roundConfig, setRoundConfig]     = useState<LevelConfig>(() => generateRoundConfig(0));
+  const [activePowerups, setActivePowerups] = useState<PowerupType[]>([]);
+  const [inventory, setInventory] = useState<PowerupType[]>([]);
+  const [targetButtons, setTargetButtons] = useState<number[]>([0]);
+  const [selectedPowerup, setSelectedPowerup] = useState<PowerupType>('hourglass');
+  const [powerupHistory, setPowerupHistory] = useState<PowerupType[]>(INITIAL_POWERUP_HISTORY);
+  const [shieldActive, setShieldActive] = useState(false);
+  const [localSaveAvailable, setLocalSaveAvailable] = useState(false);
+  const [localLoadError, setLocalLoadError] = useState<string | null>(null);
   const [totalScore, setTotalScore]       = useState(0);
   const [wind, setWind]             = useState('0.0');
   const [timeLeft, setTimeLeft]     = useState(0);
@@ -149,7 +130,6 @@ export default function ChaoticButtonGameHardMode() {
   const [billcipherVisible, setBillcipherVisible] = useState(false);
   const [redHazardVisible, setRedHazardVisible] = useState(false);
   const [redHazardCount, setRedHazardCount] = useState(0);
-  const [selectedPowerup, setSelectedPowerup] = useState<'hourglass' | null>('hourglass');
   const [powerupUsed, setPowerupUsed] = useState(false);
   const [timeSlowActive, setTimeSlowActive] = useState(false);
   const [leaderboard, setLeaderboard]       = useState<ScoreRecord[]>([]);
@@ -158,6 +138,7 @@ export default function ChaoticButtonGameHardMode() {
 
   const gameRef    = useRef<HTMLDivElement | null>(null);
   const buttonRef  = useRef<HTMLButtonElement | null>(null);
+  const targetButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const billcipherRef = useRef<HTMLDivElement | null>(null);
   const blockersRef = useRef<(HTMLDivElement | null)[]>([]);
   const gambleDotsRef = useRef<{ x: number; y: number }[]>([]);
@@ -177,6 +158,8 @@ export default function ChaoticButtonGameHardMode() {
   const billcipherTimerRef = useRef<number | null>(null);
   const redHazardTimerRef = useRef<number | null>(null);
   const powerupTimerRef = useRef<number | null>(null);
+  const shieldTimerRef = useRef<number | null>(null);
+  const shieldActiveRef = useRef(false);
   const phaseRef   = useRef<GamePhase>('username');
   const levelRef   = useRef(0);
 
@@ -186,16 +169,23 @@ export default function ChaoticButtonGameHardMode() {
   useEffect(() => { billcipherVisibleRef.current = billcipherVisible; }, [billcipherVisible]);
   useEffect(() => { redHazardVisibleRef.current = redHazardVisible; }, [redHazardVisible]);
   useEffect(() => { timeSlowActiveRef.current = timeSlowActive; }, [timeSlowActive]);
+  useEffect(() => { shieldActiveRef.current = shieldActive; }, [shieldActive]);
 
   useEffect(() => {
     return () => {
       if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
       if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
       if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
+      if (shieldTimerRef.current) window.clearTimeout(shieldTimerRef.current);
     };
   }, []);
 
-  const config = LEVELS[currentLevel] ?? LEVELS[0];
+  useEffect(() => {
+    const saved = localStorage.getItem(LOCAL_SAVE_KEY);
+    setLocalSaveAvailable(!!saved);
+  }, []);
+
+  const config = roundConfig;
 
   // ── Position helpers ─────────────────────────────────────────────────────
   const randomPos = useCallback((el: HTMLElement) => {
@@ -254,19 +244,118 @@ export default function ChaoticButtonGameHardMode() {
     setPhase('gambling');
   }, []);
 
-  const handleUsePowerup = useCallback(() => {
-    if (selectedPowerup !== 'hourglass' || powerupUsed || phaseRef.current !== 'playing') return;
+  const handleActivatePowerup = useCallback((powerup: PowerupType) => {
+    if (phaseRef.current !== 'playing') return;
+    if (!inventory.includes(powerup)) return;
+
+    setInventory(prev => {
+      const index = prev.indexOf(powerup);
+      if (index === -1) return prev;
+      return [...prev.slice(0, index), ...prev.slice(index + 1)];
+    });
+    setActivePowerups(prev => [...prev, powerup]);
     setPowerupUsed(true);
-    setTimeSlowActive(true);
-    timeScaleRef.current = 0.45;
-    setSaveMessage('⏳ Hourglass activated! Hazards slow down for 6 seconds.');
-    if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
-    powerupTimerRef.current = window.setTimeout(() => {
-      timeScaleRef.current = 1;
-      setTimeSlowActive(false);
-      setSaveMessage('⏱️ Hourglass effect ended.');
-    }, 6000);
-  }, [powerupUsed, selectedPowerup]);
+
+    if (powerup === 'hourglass') {
+      setTimeSlowActive(true);
+      timeScaleRef.current = 0.45;
+      setSaveMessage('⏳ Hourglass activated! Hazards slow down for 6 seconds.');
+      if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
+      powerupTimerRef.current = window.setTimeout(() => {
+        timeScaleRef.current = 1;
+        setTimeSlowActive(false);
+        setSaveMessage('⏱️ Hourglass effect ended.');
+      }, 6000);
+    }
+
+    if (powerup === 'shield') {
+      setShieldActive(true);
+      setSaveMessage('🛡️ Shield activated! You are immune for 10 seconds.');
+      if (shieldTimerRef.current) window.clearTimeout(shieldTimerRef.current);
+      shieldTimerRef.current = window.setTimeout(() => {
+        setShieldActive(false);
+        setSaveMessage('🛡️ Shield expired.');
+      }, 10000);
+    }
+
+    if (powerup === 'money') {
+      setSaveMessage(prev => `${prev} 💰 Money powerup activated! Points will multiply when you complete the round.`.trim());
+    }
+  }, [inventory]);
+
+  const saveLocalProgress = useCallback(() => {
+    try {
+      const payload = {
+        phase,
+        username,
+        usernameInput,
+        currentLevel,
+        roundScores,
+        roundConfig,
+        activePowerups,
+        targetButtons,
+        inventory,
+        selectedPowerup,
+        powerupHistory,
+        totalScore,
+        wind,
+        timeLeft,
+        levelStartTime,
+        billcipherActive,
+        billcipherVisible,
+        redHazardVisible,
+        redHazardCount,
+        powerupUsed,
+        timeSlowActive,
+        shieldActive,
+        saveMessage,
+      };
+      localStorage.setItem(LOCAL_SAVE_KEY, JSON.stringify(payload));
+      setLocalSaveAvailable(true);
+      setSaveMessage('💾 Progress saved locally.');
+    } catch (error) {
+      console.error('Failed to save locally', error);
+      setSaveMessage('⚠️ Could not save locally.');
+    }
+  }, [phase, username, usernameInput, currentLevel, roundScores, roundConfig, activePowerups, targetButtons, inventory, selectedPowerup, powerupHistory, totalScore, wind, timeLeft, levelStartTime, billcipherActive, billcipherVisible, redHazardVisible, redHazardCount, powerupUsed, timeSlowActive, shieldActive, saveMessage]);
+
+  const loadLocalProgress = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_SAVE_KEY);
+      if (!raw) {
+        setLocalLoadError('No saved progress found.');
+        return;
+      }
+      const data = JSON.parse(raw);
+      setUsername(data.username ?? '');
+      setUsernameInput(data.usernameInput ?? '');
+      setCurrentLevel(data.currentLevel ?? 0);
+      setRoundScores(Array.isArray(data.roundScores) ? data.roundScores : []);
+      setRoundConfig(data.roundConfig ? data.roundConfig : generateRoundConfig(0));
+      setActivePowerups(Array.isArray(data.activePowerups) ? data.activePowerups : []);
+      setTargetButtons(Array.isArray(data.targetButtons) ? data.targetButtons : [0]);
+      setInventory(Array.isArray(data.inventory) ? data.inventory : []);
+      setSelectedPowerup(data.selectedPowerup ?? 'hourglass');
+      setPowerupHistory(Array.isArray(data.powerupHistory) ? data.powerupHistory : []);
+      setTotalScore(typeof data.totalScore === 'number' ? data.totalScore : 0);
+      setWind(data.wind ?? '0.0');
+      setTimeLeft(typeof data.timeLeft === 'number' ? data.timeLeft : 0);
+      setLevelStartTime(typeof data.levelStartTime === 'number' ? data.levelStartTime : 0);
+      setBillcipherActive(!!data.billcipherActive);
+      setBillcipherVisible(!!data.billcipherVisible);
+      setRedHazardVisible(!!data.redHazardVisible);
+      setRedHazardCount(typeof data.redHazardCount === 'number' ? data.redHazardCount : 0);
+      setPowerupUsed(!!data.powerupUsed);
+      setTimeSlowActive(!!data.timeSlowActive);
+      setShieldActive(!!data.shieldActive);
+      setSaveMessage(data.saveMessage ?? 'Loaded saved progress.');
+      setPhase(data.phase ?? 'powerupSelect');
+      setLocalLoadError(null);
+    } catch (error) {
+      console.error('Failed to load local save', error);
+      setLocalLoadError('Unable to load saved progress.');
+    }
+  }, []);
 
   const handleBillcipherCollision = useCallback(() => {
     setTotalScore(prev => prev - 1000);
@@ -397,9 +486,13 @@ export default function ChaoticButtonGameHardMode() {
   // ── Initial placement when level starts ──────────────────────────────────
   useLayoutEffect(() => {
     if (phase !== 'playing' && phase !== 'gambling') return;
-    if (buttonRef.current) randomPos(buttonRef.current);
 
     if (phase === 'playing') {
+      const nextConfig = generateRoundConfig(currentLevel);
+      setRoundConfig(nextConfig);
+      setTargetButtons(Array.from({ length: nextConfig.buttonCount }, (_, i) => i));
+      if (buttonRef.current) randomPos(buttonRef.current);
+      targetButtonRefs.current.forEach(btn => { if (btn) randomPos(btn); });
       blockersRef.current.forEach(b => { if (b) randomPos(b); });
       const hasBillcipher = Math.random() < 0.4; // 40% chance to have Billcipher in this level
       setBillcipherActive(hasBillcipher);
@@ -446,7 +539,7 @@ export default function ChaoticButtonGameHardMode() {
   // ── Level timer ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'playing') return;
-    const cfg = LEVELS[levelRef.current];
+    const cfg = roundConfig;
     if (!cfg || cfg.timeLimit === 0) return;
 
     const start = Date.now();
@@ -468,7 +561,7 @@ export default function ChaoticButtonGameHardMode() {
   // ── Game animation loop ──────────────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'playing') return;
-    const cfg = LEVELS[levelRef.current];
+    const cfg = roundConfig;
     if (!cfg) return;
 
     let blockerFrame = 0;
@@ -494,33 +587,37 @@ export default function ChaoticButtonGameHardMode() {
 
     const update = () => {
       if (phaseRef.current !== 'playing') return;
-      const game   = gameRef.current;
-      const button = buttonRef.current;
-      if (game && button) {
-        const bx   = button.offsetLeft + button.clientWidth / 2;
-        const by   = button.offsetTop  + button.clientHeight / 2;
-        const dx   = cursorXRef.current - bx;
-        const dy   = cursorYRef.current - by;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      const game = gameRef.current;
+      const buttons = [buttonRef.current, ...targetButtonRefs.current].filter(Boolean) as HTMLButtonElement[];
+      if (game && buttons.length > 0) {
+        buttons.forEach(button => {
+          const bx   = button.offsetLeft + button.clientWidth / 2;
+          const by   = button.offsetTop  + button.clientHeight / 2;
+          const dx   = cursorXRef.current - bx;
+          const dy   = cursorYRef.current - by;
+          const dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (Math.random() < cfg.randomTeleportChance * timeScaleRef.current) randomPos(button);
+          if (Math.random() < cfg.randomTeleportChance * timeScaleRef.current) randomPos(button);
 
-        if (dist < cfg.escapeRadius) {
-          button.style.left = `${clamp(button.offsetLeft - dx * cfg.escapeStrength, 0, game.clientWidth  - button.clientWidth)}px`;
-          button.style.top  = `${clamp(button.offsetTop  - dy * cfg.escapeStrength, 0, game.clientHeight - button.clientHeight)}px`;
-        }
+          if (dist < cfg.escapeRadius) {
+            button.style.left = `${clamp(button.offsetLeft - dx * cfg.escapeStrength, 0, game.clientWidth  - button.clientWidth)}px`;
+            button.style.top  = `${clamp(button.offsetTop  - dy * cfg.escapeStrength, 0, game.clientHeight - button.clientHeight)}px`;
+          }
 
-        if (cfg.windEnabled) {
-          button.style.left = `${clamp(button.offsetLeft + windForceRef.current * 0.08 * timeScaleRef.current, 0, game.clientWidth - button.clientWidth)}px`;
-        }
+          if (cfg.windEnabled) {
+            button.style.left = `${clamp(button.offsetLeft + windForceRef.current * 0.08 * timeScaleRef.current, 0, game.clientWidth - button.clientWidth)}px`;
+          }
+        });
 
         if (cfg.flashEnabled && Math.random() < 0.01) {
           game.classList.add('flash');
           window.clearTimeout(flashTimeout);
           flashTimeout = window.setTimeout(() => game.classList.remove('flash'), 150);
         }
+      }
 
-        if (redHazardVisibleRef.current && redHazardDotsRef.current.length > 0) {
+      if (game) {
+      if (redHazardVisibleRef.current && redHazardDotsRef.current.length > 0) {
           redHazardDotsRef.current.forEach((hazard, index) => {
             const dxh = cursorXRef.current - hazard.x;
             const dyh = cursorYRef.current - hazard.y;
@@ -542,8 +639,10 @@ export default function ChaoticButtonGameHardMode() {
             }
 
             if (Math.hypot(hazard.x - cursorXRef.current, hazard.y - cursorYRef.current) < 18) {
-              setSaveMessage('💀 A red dot hit you. Level over.');
-              setPhase('gameOver');
+              if (!shieldActiveRef.current) {
+                setSaveMessage('💀 A red dot hit you. Level over.');
+                setPhase('gameOver');
+              }
             }
           });
         }
@@ -568,8 +667,10 @@ export default function ChaoticButtonGameHardMode() {
           bill.style.top = `${pos.y}px`;
 
           if (Math.hypot(pos.x - cursorXRef.current, pos.y - cursorYRef.current) < 18) {
-            handleBillcipherCollision();
-            return;
+            if (!shieldActiveRef.current) {
+              handleBillcipherCollision();
+              return;
+            }
           }
         }
       }
@@ -605,18 +706,40 @@ export default function ChaoticButtonGameHardMode() {
     cursorYRef.current = event.clientY - rect.top;
   };
 
-  // ── Button clicked → level complete ────────────────────────────────────
+  const completeTargetRound = useCallback(() => {
+    const cfg = roundConfig;
+    const elapsed = cfg.timeLimit > 0
+      ? cfg.timeLimit - Math.max(0, (cfg.timeLimit - (Date.now() - levelStartTime) / 1000))
+      : 0;
+    let score = calcLevelScore(cfg.pointsBase, elapsed, cfg.timeLimit);
+    const moneyCount = activePowerups.filter(p => p === 'money').length;
+    if (moneyCount > 0) {
+      const multiplier = 2 ** moneyCount;
+      score *= multiplier;
+      setSaveMessage(`💰 Money powerup active! Score x${multiplier}.`);
+    }
+    const newScores = [...roundScores, score];
+    setRoundScores(newScores);
+    setTotalScore(prev => prev + score);
+    setActivePowerups([]);
+    setPowerupUsed(false);
+    setShieldActive(false);
+    setTimeSlowActive(false);
+    setPhase('levelComplete');
+  }, [activePowerups, levelStartTime, roundConfig, roundScores]);
+
+  const handleTargetClick = useCallback((id: number) => {
+    if (phaseRef.current !== 'playing') return;
+    const remaining = targetButtons.filter(buttonId => buttonId !== id);
+    setTargetButtons(remaining);
+    if (remaining.length === 0) {
+      completeTargetRound();
+    }
+  }, [completeTargetRound, targetButtons]);
+
   const handleButtonClick = () => {
     if (phaseRef.current === 'playing') {
-      const cfg    = LEVELS[currentLevel];
-      const elapsed = cfg.timeLimit > 0
-        ? cfg.timeLimit - Math.max(0, (cfg.timeLimit - (Date.now() - levelStartTime) / 1000))
-        : 0;
-      const score  = calcLevelScore(cfg.pointsBase, elapsed, cfg.timeLimit);
-      const newScores = [...levelScores, score];
-      setLevelScores(newScores);
-      setTotalScore(prev => prev + score);
-      setPhase('levelComplete');
+      handleTargetClick(0);
       return;
     }
 
@@ -636,26 +759,36 @@ export default function ChaoticButtonGameHardMode() {
 
   // ── Advance to next level or finish ─────────────────────────────────────
   const handleNextLevel = () => {
-    if (currentLevel + 1 >= LEVELS.length) {
-      setPhase('finished');
-    } else {
-      setCurrentLevel(prev => prev + 1);
-      setWind('0.0');
-      windForceRef.current = 0;
-      setPhase('playing');
-    }
+    const nextIndex = currentLevel + 1;
+    const nextConfig = generateRoundConfig(nextIndex);
+    setCurrentLevel(nextIndex);
+    setRoundConfig(nextConfig);
+    setTargetButtons(Array.from({ length: nextConfig.buttonCount }, (_, i) => i));
+    setWind('0.0');
+    windForceRef.current = 0;
+    setActivePowerups([]);
+    setPowerupUsed(false);
+    const nextPhase = (nextIndex + 1) % 5 === 0 ? 'powerupSelect' : 'playing';
+    setPhase(nextPhase);
   };
 
   // ── Save score to MongoDB ────────────────────────────────────────────────
   const handleSaveScore = async () => {
     setSavingScore(true);
     setSaveMessage('');
-    const totalTime = levelScores.length; // could track actual seconds if desired
+    const totalTime = roundScores.length; // could track actual seconds if desired
     try {
       const res = await fetch('/api/scores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, totalScore, totalTime, date: new Date() }),
+        body: JSON.stringify({
+          username,
+          totalScore,
+          totalTime,
+          date: new Date(),
+          roundsSurvived: roundScores.length,
+          powerupHistory,
+        }),
       });
       if (res.ok) {
         setSaveMessage('✅ Score saved! Check the leaderboard.');
@@ -676,8 +809,17 @@ export default function ChaoticButtonGameHardMode() {
     if (powerupTimerRef.current) window.clearTimeout(powerupTimerRef.current);
     if (billcipherTimerRef.current) window.clearTimeout(billcipherTimerRef.current);
     if (redHazardTimerRef.current) window.clearTimeout(redHazardTimerRef.current);
+    if (shieldTimerRef.current) window.clearTimeout(shieldTimerRef.current);
     setCurrentLevel(0);
-    setLevelScores([]);
+    setRoundScores([]);
+    setRoundConfig(generateRoundConfig(0));
+    setActivePowerups([]);
+    setTargetButtons([0]);
+    setInventory([]);
+    setSelectedPowerup('hourglass');
+    setPowerupHistory([]);
+    setPowerupUsed(false);
+    setShieldActive(false);
     setTotalScore(0);
     setWind('0.0');
     windForceRef.current = 0;
@@ -691,6 +833,7 @@ export default function ChaoticButtonGameHardMode() {
     setTimeSlowActive(false);
     timeScaleRef.current = 1;
     setSaveMessage('');
+    setLocalLoadError(null);
     setPhase('username');
   };
 
@@ -712,17 +855,27 @@ export default function ChaoticButtonGameHardMode() {
             onKeyDown={e => {
               if (e.key === 'Enter' && usernameInput.trim()) {
                 setUsername(usernameInput.trim());
-                setPhase('playing');
+                setPhase('powerupSelect');
               }
             }}
           />
           <button
             className="action-btn"
             disabled={!usernameInput.trim()}
-            onClick={() => { setUsername(usernameInput.trim()); setPhase('playing'); }}
+            onClick={() => { setUsername(usernameInput.trim()); setPhase('powerupSelect'); }}
           >
             Start Game
           </button>
+          {localSaveAvailable && (
+            <button
+              type="button"
+              className="action-btn secondary"
+              onClick={loadLocalProgress}
+            >
+              Continue Saved Game
+            </button>
+          )}
+          {localLoadError && <p className="error-msg">{localLoadError}</p>}
           <div className="leaderboard-card">
             <h3>Leaderboard</h3>
             {leaderboardLoading ? (
@@ -747,35 +900,60 @@ export default function ChaoticButtonGameHardMode() {
     );
   }
 
-  // ─── Render: level complete screen ───────────────────────────────────────
-  if (phase === 'levelComplete') {
-    const lastScore = levelScores[levelScores.length - 1] ?? 0;
-    const isLast    = currentLevel + 1 >= LEVELS.length;
+  if (phase === 'powerupSelect') {
+    const roundNumber = currentLevel + 1;
     return (
       <div className="app-shell">
-        <h1 className="title">LEVEL COMPLETE!</h1>
+        <h1 className="title">ROUND {roundNumber}</h1>
         <div className="overlay-card">
-          <div className="level-badge">Level {currentLevel + 1} / {LEVELS.length}</div>
-          <p className="score-earned">+{lastScore} pts</p>
-          <p className="score-total">Total: {totalScore} pts</p>
-          <div className="powerup-panel">
-            <h3>Choose a powerup for the next level</h3>
-            <div className="powerup-grid">
+          <h2>Choose your powerup for this round</h2>
+          <p className="overlay-sub">Every 5 rounds you unlock a new powerup for your inventory.</p>
+          <div className="powerup-grid">
+            {POWERUP_CHOICES.map(powerup => (
               <button
+                key={powerup.type}
                 type="button"
-                className={`powerup-card${selectedPowerup === 'hourglass' ? ' selected' : ''}`}
-                onClick={() => setSelectedPowerup('hourglass')}
+                className={`powerup-card${selectedPowerup === powerup.type ? ' selected' : ''}`}
+                onClick={() => setSelectedPowerup(powerup.type)}
               >
-                <div className="powerup-icon" style={{ backgroundImage: 'url(/img/hourglass.png)' }} />
+                <div className="powerup-icon" style={{ backgroundImage: `url(${powerup.image})` }} />
                 <div>
-                  <strong>Hourglass</strong>
-                  <p>Slow hazards and enemies for 6 seconds.</p>
+                  <strong>{powerup.label}</strong>
+                  <p>{powerup.description}</p>
                 </div>
               </button>
-            </div>
+            ))}
           </div>
+          <button
+            className="action-btn"
+            onClick={() => {
+              setInventory(prev => [...prev, selectedPowerup]);
+              setPowerupHistory(prev => [...prev, selectedPowerup]);
+              setPowerupUsed(false);
+              setPhase('playing');
+            }}
+          >
+            Add {powerupLabel(selectedPowerup)} and Start Round {roundNumber}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Render: level complete screen ───────────────────────────────────────
+  if (phase === 'levelComplete') {
+    const lastScore = roundScores[roundScores.length - 1] ?? 0;
+    const roundNumber = currentLevel + 1;
+    return (
+      <div className="app-shell">
+        <h1 className="title">ROUND COMPLETE!</h1>
+        <div className="overlay-card">
+          <div className="level-badge">Round {roundNumber}</div>
+          <p className="score-earned">+{lastScore} pts</p>
+          <p className="score-total">Total: {totalScore} pts</p>
+          <p className="overlay-sub">Survive the next round as long as you can.</p>
           <button className="action-btn" onClick={handleNextLevel}>
-            {isLast ? 'Finish Game' : `Level ${currentLevel + 2} →`}
+            Continue
           </button>
         </div>
       </div>
@@ -786,10 +964,17 @@ export default function ChaoticButtonGameHardMode() {
   if (phase === 'gameOver') {
     return (
       <div className="app-shell">
-        <h1 className="title">TIME'S UP!</h1>
+        <h1 className="title">GAME OVER</h1>
         <div className="overlay-card">
-          <p className="overlay-sub">You ran out of time on Level {currentLevel + 1}.</p>
+          <p className="overlay-sub">{saveMessage || `You were hit during round ${currentLevel + 1}.`}</p>
           <p className="score-total">Final Score: {totalScore} pts</p>
+          {saveMessage ? (
+            <p className="save-msg">{saveMessage}</p>
+          ) : (
+            <button className="action-btn" onClick={handleSaveScore} disabled={savingScore}>
+              {savingScore ? 'Saving…' : 'Save Score to Leaderboard'}
+            </button>
+          )}
           <button className="action-btn danger" onClick={handleRestart}>Try Again</button>
         </div>
       </div>
@@ -804,7 +989,7 @@ export default function ChaoticButtonGameHardMode() {
         <div className="overlay-card">
           <p className="overlay-sub">Player: <strong>{username}</strong></p>
           <div className="score-breakdown">
-            {levelScores.map((s, i) => (
+            {roundScores.map((s, i) => (
               <div key={i} className="score-row">
                 <span>Level {i + 1}</span>
                 <span>{s} pts</span>
@@ -906,27 +1091,73 @@ export default function ChaoticButtonGameHardMode() {
             </div>
           )}
           {config.windEnabled && <span className="wind-display">Wind: {wind}</span>}
+          <span className="hud-label">Targets: {targetButtons.length}</span>
+          <button className="action-btn secondary" type="button" onClick={saveLocalProgress}>
+            Save Progress
+          </button>
           <div className="powerup-hud">
-            <span className="powerup-label">Powerup:</span>
-            <span>{selectedPowerup === 'hourglass' ? 'Hourglass' : 'No powerup selected'}</span>
-            <button
-              className="action-btn secondary"
-              type="button"
-              onClick={handleUsePowerup}
-              disabled={!selectedPowerup || powerupUsed}
-            >
-              {powerupUsed ? 'Powerup Used' : 'Use Hourglass'}
-            </button>
+            <span className="powerup-label">Inventory:</span>
+            {inventory.length === 0 ? (
+              <span>None</span>
+            ) : (
+              <div className="inventory-list">
+                {inventory.map((powerup, index) => (
+                  <span key={`${powerup}-${index}`} className="inventory-chip">
+                    {powerupLabel(powerup)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {inventory.length > 0 && (
+              <div className="inventory-actions">
+                {inventory.map((powerup, index) => (
+                  <button
+                    key={`${powerup}-btn-${index}`}
+                    className="action-btn secondary"
+                    type="button"
+                    onClick={() => handleActivatePowerup(powerup)}
+                  >
+                    Use {powerupLabel(powerup)}
+                  </button>
+                ))}
+              </div>
+            )}
+            {activePowerups.length > 0 && (
+              <div className="active-powerup-list">
+                <span className="powerup-label">Active powerups:</span>
+                {activePowerups.map((powerup, index) => (
+                  <span key={`${powerup}-${index}`} className="powerup-chip">
+                    {powerupLabel(powerup)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {shieldActive && <span className="powerup-status">🛡️ Shield active</span>}
             {timeSlowActive && <span className="powerup-status">⏳ Slow time active</span>}
+            {activePowerups.filter(p => p === 'money').length > 0 && (
+              <span className="powerup-status">💰 Points will multiply this round</span>
+            )}
           </div>
         </div>
       </div>
 
       {/* Game area */}
       <div className="game-area" ref={gameRef} onMouseMove={handleMouseMove}>
-        <button className="big-button" ref={buttonRef} onClick={handleButtonClick}>
-          PRESS
-        </button>
+        {targetButtons.includes(0) && (
+          <button className="big-button" ref={buttonRef} onClick={() => handleTargetClick(0)}>
+            PRESS
+          </button>
+        )}
+        {targetButtons.filter(id => id !== 0).map((id) => (
+          <button
+            key={id}
+            className="big-button extra-button"
+            ref={(el: HTMLButtonElement | null) => { targetButtonRefs.current[id - 1] = el; }}
+            onClick={() => handleTargetClick(id)}
+          >
+            PRESS
+          </button>
+        ))}
         {billcipherActive && (
           <div className={`billcipher${billcipherVisible ? ' active' : ''}`} ref={billcipherRef} />
         )}
@@ -947,13 +1178,8 @@ export default function ChaoticButtonGameHardMode() {
       </div>
 
       <div className="level-progress">
-        {LEVELS.map((_, i) => (
-          <div
-            key={i}
-            className={`level-dot${i < currentLevel ? ' done' : i === currentLevel ? ' active' : ''}`}
-            title={`Level ${i + 1}`}
-          />
-        ))}
+        <span>Round {currentLevel + 1}</span>
+        <span>{getDifficultyStage(currentLevel)} difficulty</span>
       </div>
     </div>
   );
