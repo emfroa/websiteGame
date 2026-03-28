@@ -163,6 +163,181 @@ body {
   pointer-events: none;
 }
 
+.billcipher {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  background: url('/billcipher.png') center/contain no-repeat;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.billcipher.active {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.red-hazard {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff2f2f;
+  box-shadow: 0 0 12px rgba(255, 47, 47, 0.8);
+  pointer-events: none;
+}
+
+.powerup-panel {
+  width: 100%;
+  text-align: left;
+}
+
+.powerup-grid {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.powerup-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #151515;
+  border: 2px solid #333;
+  border-radius: 14px;
+  color: #ddd;
+  text-align: left;
+  cursor: pointer;
+}
+
+.powerup-card.selected {
+  border-color: #8be3ff;
+  background: linear-gradient(135deg, rgba(11, 116, 181, 0.14), #111);
+}
+
+.powerup-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+  border: 2px solid #555;
+}
+
+.powerup-hud {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  align-items: center;
+}
+
+.powerup-label {
+  font-size: 0.8rem;
+  color: #9ae;
+}
+
+.powerup-status {
+  font-size: 0.85rem;
+  color: #8ef;
+}
+
+/* ─── Game-play shell: fills viewport, no scroll ──────────────────────────── */
+.app-shell-game {
+  height: 100vh;
+  min-height: unset;
+  padding: 5px 10px 4px;
+  overflow: hidden;
+  gap: 4px;
+}
+
+.app-shell-game .hud {
+  width: 100%;
+  max-width: none;
+  margin-bottom: 4px;
+  padding: 5px 10px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.app-shell-game .hud-right {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell-game .powerup-hud {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.app-shell-game .inventory-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.app-shell-game .inventory-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.app-shell-game .active-powerup-list {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-shell-game .game-area {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  width: 100%;
+  max-width: none;
+}
+
+.app-shell-game .level-progress {
+  flex-shrink: 0;
+  padding: 2px 0;
+  margin-top: 2px;
+}
+
+/* ─── Decoy toast ──────────────────────────────────────────────────────────── */
+.decoy-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(180, 0, 0, 0.9);
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 800;
+  padding: 10px 24px;
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 200;
+  white-space: nowrap;
+  animation: decoy-pop 0.15s ease;
+}
+
+@keyframes decoy-pop {
+  from { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+  to   { transform: translate(-50%, -50%) scale(1);   opacity: 1; }
+}
+
 /* ─── Flash animation ─────────────────────────────────────────────────────── */
 .flash {
   animation: flash 0.15s;
@@ -350,6 +525,12 @@ body {
   font-size: 0.95rem;
 }
 
+.leaderboard-row-you {
+  border-color: #ffd700;
+  color: #ffd700;
+  font-weight: 700;
+}
+
 .error-msg {
   margin: 0;
   color: #f88;
@@ -379,4 +560,332 @@ body {
   margin: 0;
   font-size: 0.9rem;
   color: #8ef;
+}
+
+/* ─── Lives display ───────────────────────────────────────────────────────── */
+.lives-display {
+  display: flex;
+  gap: 4px;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.heart {
+  color: #f44;
+  text-shadow: 0 0 8px #f446;
+  transition: color 0.2s, text-shadow 0.2s;
+}
+
+.heart-empty {
+  color: #333;
+  text-shadow: none;
+}
+
+/* ─── Invincibility flash ─────────────────────────────────────────────────── */
+.invincible-flash {
+  animation: invincible-pulse 0.3s ease infinite alternate;
+}
+
+@keyframes invincible-pulse {
+  from { border-color: #777; }
+  to   { border-color: #8ef; box-shadow: 0 0 18px #8ef6 inset; }
+}
+
+.invincible-status {
+  color: #8ef;
+  animation: invincible-pulse-text 0.4s ease infinite alternate;
+}
+
+@keyframes invincible-pulse-text {
+  from { opacity: 1; }
+  to   { opacity: 0.4; }
+}
+
+/* ─── Freeze collectible ──────────────────────────────────────────────────── */
+.freeze-collectible {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  cursor: pointer;
+  border-radius: 50%;
+  background: radial-gradient(circle, #1af3 40%, transparent 70%);
+  border: 2px solid #7ef;
+  box-shadow: 0 0 14px #7ef8, 0 0 28px #7ef4;
+  animation: freeze-bob 1.2s ease-in-out infinite alternate;
+  z-index: 10;
+}
+
+.freeze-collectible:hover {
+  box-shadow: 0 0 20px #7efb, 0 0 40px #7ef8;
+  transform: scale(1.15);
+}
+
+@keyframes freeze-bob {
+  from { transform: translateY(0px); }
+  to   { transform: translateY(-6px); }
+}
+
+/* ─── Freeze overlay ──────────────────────────────────────────────────────── */
+.freeze-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, #7ef110 0%, transparent 70%);
+  pointer-events: none;
+  animation: freeze-shimmer 0.6s ease infinite alternate;
+  z-index: 1;
+}
+
+@keyframes freeze-shimmer {
+  from { opacity: 0.08; }
+  to   { opacity: 0.18; }
+}
+
+.freeze-status {
+  color: #7ef;
+}
+
+/* ─── Pikachu enemy ───────────────────────────────────────────────────────── */
+.pikachu-enemy {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  background: url('/img/pikachu.png') center/contain no-repeat;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px #ffd70099);
+  z-index: 5;
+}
+
+.pikachu-enemy.active {
+  opacity: 1;
+  animation: pikachu-bob 0.45s ease-in-out infinite alternate;
+}
+
+@keyframes pikachu-bob {
+  from { transform: translateY(0) scale(1); }
+  to   { transform: translateY(-5px) scale(1.06); }
+}
+
+/* ─── Battle screen ───────────────────────────────────────────────────────── */
+.battle-title {
+  background: linear-gradient(90deg, #ffd700, #ff8c00, #ffd700);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.battle-screen {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 16px;
+  width: 860px;
+  max-width: 100%;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  border: 4px solid #ffd700;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 0 40px #ffd70044;
+}
+
+.battle-enemy-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.battle-player-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.battle-name-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff14;
+  border: 2px solid #ffffff30;
+  border-radius: 8px;
+  padding: 6px 14px;
+  width: 100%;
+}
+
+.battle-name {
+  font-weight: 900;
+  font-size: 1rem;
+  color: #fff;
+  letter-spacing: 0.08em;
+  flex: 1;
+}
+
+.battle-level {
+  font-size: 0.8rem;
+  color: #ffd700;
+  font-weight: 700;
+}
+
+.battle-hp-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.battle-hp-label {
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #ffd700;
+  min-width: 22px;
+}
+
+.battle-hp-track {
+  flex: 1;
+  height: 14px;
+  background: #222;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid #555;
+}
+
+.battle-hp-fill {
+  height: 100%;
+  border-radius: 7px;
+  transition: width 0.3s ease, background 0.3s;
+}
+
+.battle-hp-num {
+  font-size: 0.8rem;
+  color: #ccc;
+  min-width: 52px;
+  text-align: right;
+}
+
+.battle-pikachu-sprite {
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 14px #ffd70099);
+  animation: pikachu-battle-bob 1s ease-in-out infinite alternate;
+}
+
+@keyframes pikachu-battle-bob {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-10px); }
+}
+
+/* Battle log */
+.battle-log {
+  grid-column: 1 / -1;
+  background: #000c;
+  border: 2px solid #ffd70055;
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.battle-log-line {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #ddd;
+  line-height: 1.4;
+}
+
+.battle-log-line:last-child {
+  color: #ffd700;
+  font-weight: 700;
+}
+
+/* Move buttons */
+.battle-moves {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.battle-move-btn {
+  padding: 14px 10px;
+  background: #1a1a3e;
+  border: 2px solid #4455aa;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  letter-spacing: 0.04em;
+}
+
+.battle-move-btn:hover:not(:disabled) {
+  background: #2a2a5e;
+  border-color: #8899ff;
+  transform: translateY(-2px);
+}
+
+.battle-move-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.battle-move-thunder {
+  border-color: #ffd700;
+  color: #ffd700;
+}
+
+.battle-move-thunder:hover:not(:disabled) {
+  background: #2a2000;
+  border-color: #ffee44;
+}
+
+.battle-move-potion {
+  border-color: #44cc88;
+  color: #44cc88;
+}
+
+.battle-move-potion:hover:not(:disabled) {
+  background: #00251a;
+  border-color: #66ffaa;
+}
+
+/* Battle outcome */
+.battle-outcome {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.battle-result-win {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: #ffd700;
+  margin: 0;
+  text-shadow: 0 0 20px #ffd700aa;
+  animation: victory-pulse 0.5s ease infinite alternate;
+}
+
+@keyframes victory-pulse {
+  from { transform: scale(1); }
+  to   { transform: scale(1.05); }
+}
+
+.battle-result-lose {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f44;
+  margin: 0;
 }

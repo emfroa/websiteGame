@@ -4,8 +4,14 @@ import Score from '../models/Score.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
-  const { username, totalScore, totalTime, date } = req.body;
-  if (!username || typeof totalScore !== 'number' || typeof totalTime !== 'number') {
+  const { username, totalScore, totalTime, roundsSurvived, powerupHistory, date } = req.body;
+  if (
+    !username ||
+    typeof totalScore !== 'number' ||
+    typeof totalTime !== 'number' ||
+    typeof roundsSurvived !== 'number' ||
+    !Array.isArray(powerupHistory)
+  ) {
     return res.status(400).json({ ok: false, message: 'Invalid payload' });
   }
 
@@ -14,6 +20,8 @@ router.post('/', async (req, res) => {
       username,
       totalScore,
       totalTime,
+      roundsSurvived,
+      powerupHistory,
       date: date ? new Date(date) : undefined,
     });
     await score.save();
