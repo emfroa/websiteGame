@@ -10,6 +10,9 @@
  #theButton { position:absolute; padding:18px 30px; background:#d00; color:white; border:none; border-radius:10px; font-size:20px; cursor:pointer; transition:0.03s; }
  .blocker { position:absolute; width:150px; height:50px; background:#444; border:2px solid #aaa; }
  #wind { margin-top:10px; font-size:20px; }
+ #taunt { position:absolute; top:20px; left:20px; font-size:18px; color:#ff6b6b; font-weight:bold; text-shadow:0 0 10px #ff6b6b; z-index:100; max-width:300px; opacity:0; transition:opacity 0.3s; }
+ .taunt-show { animation: tauntPulse 0.6s ease-in-out; }
+ @keyframes tauntPulse { 0% { opacity:0; transform:scale(0.8); } 50% { opacity:1; transform:scale(1.1); } 100% { opacity:0; } }
  .flash { animation: flash 0.15s; }
  @keyframes flash { from { background:#fff; } to { background:#111; } }
 </style>
@@ -18,7 +21,8 @@
 <h1>CHAOTIC HARD MODE</h1>
 <p>You wanted harder. Here it is.</p>
 <div id="gameArea">
- <button id="theButton">PRESS</button>
+ <div id="taunt"></div>
+ <button id="theButton" tabindex="-1">PRESS</button>
  <div class="blocker" id="blocker1"></div>
  <div class="blocker" id="blocker2"></div>
  <div class="blocker" id="blocker3"></div>
@@ -30,6 +34,29 @@
 <script>
 const game = document.getElementById('gameArea');
 const btn = document.getElementById('theButton');
+const tauntEl = document.getElementById('taunt');
+const taunts = [
+ 'Too slow!',
+ 'You almost had it!',
+ 'Getting closer... or are you?',
+ 'NOPE!',
+ 'Try harder!',
+ 'Haha!',
+ 'Not today!',
+ 'Better luck next time!',
+ 'So close...',
+ 'You call that precision?',
+ 'Is that all you got?',
+ 'I\'m just getting warmed up!',
+ 'Miss me?',
+ 'PSYCH!',
+ 'Keep trying, I\'ll wait.',
+ 'Your reflexes need work.',
+ 'Tick tock!',
+ 'Come on, I\'m right here!',
+ 'Almost... but not quite!',
+ 'This is amusing.'
+];
 const blockers = [
  document.getElementById('blocker1'), document.getElementById('blocker2'), document.getElementById('blocker3'),
  document.getElementById('blocker4'), document.getElementById('blocker5'), document.getElementById('blocker6')
@@ -92,12 +119,33 @@ function update() {
  setTimeout(() => game.classList.remove('flash'), 150);
  }
 
+ // SHOW TAUNT RANDOMLY
+ if (Math.random() < 0.015) {
+ showTaunt();
+ }
+
  requestAnimationFrame(update);
 }
 update();
 
+function showTaunt() {
+ const randomTaunt = taunts[Math.floor(Math.random() * taunts.length)];
+ tauntEl.textContent = randomTaunt;
+ tauntEl.classList.remove('taunt-show');
+ void tauntEl.offsetWidth; // Trigger reflow
+ tauntEl.classList.add('taunt-show');
+}
+
+// PREVENT SPACE/ENTER FROM TRIGGERING CLICK
+document.addEventListener('keydown', (e) => {
+ if ((e.code === 'Space' || e.code === 'Enter') && e.target !== document.body) {
+ e.preventDefault();
+ }
+});
+
 // WIN CONDITION
 btn.addEventListener('click', () => {
+ showTaunt();
  alert('You beat HARD MODE. Incredible.');
  randomPos(btn);
 });
